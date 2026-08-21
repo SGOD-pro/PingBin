@@ -1,0 +1,11 @@
+[project]
+name = "truth-verification-engine"
+version = "1.0.0"
+description = "Deterministic Two-Gate Anti-Fake-Work & Field Telemetry Audit Engine"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,103 @@
+name: Deploy PingBin
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-and-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.14'
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Install dependencies
+        run: |
+          cd backend
+          uv pip install -e . --system
+          uv pip install pytest pytest-benchmark pytest-mock boto3 moto --system
+      - name: Run Backend Tests & Benchmarks
+        run: |
+          cd backend
+          pytest tests/test_lambdas.py
+          pytest tests/benchmark.py --benchmark-only --benchmark-json=benchmark.json
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run Frontend Tests
+        run: |
+          cd frontend
+          npm run test
+  
+  deploy-backend:
+    needs: test-and-benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.14'
+          
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+        
+      - name: Package Lambda 1 (webhook_receiver)
+        run: |
+          cd backend
+          mkdir -p package_1
+          cp src/webhook_receiver.py package_1/
+          cp src/config.py package_1/ 2>/dev/null || true
+          cp -r src/utils package_1/ 2>/dev/null || true
+          uv export --format requirements-txt --no-hashes --no-emit-project --no-dev > requirements.txt
+          uv pip install -r requirements.txt --target package_1/
+          cd package_1 && zip -q -r ../lambda_1.zip .
+          
+      - name: Package Lambda 2 (processor)
+        run: |
+          cd backend
+          mkdir -p package_2
+          cp src/processor.py package_2/
+          cp src/config.py package_2/ 2>/dev/null || true
+          cp -r src/utils package_2/ 2>/dev/null || true
+          uv export --format requirements-txt --no-hashes --no-emit-project --no-dev > requirements.txt
+          uv pip install -r requirements.txt --target package_2/
+          cd package_2 && zip -q -r ../lambda_2.zip .
+          
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Deploy Lambdas
+        run: |
+          cd backend
+          aws lambda update-function-code --function-name pingbin-webhook-receiver --zip-file fileb://lambda_1.zip
+          aws lambda update-function-code --function-name pingbin-processor --zip-file fileb://lambda_2.zip
+
+  deploy-frontend:
+    needs: test-and-benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: ./frontend
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: ./frontend
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: ./frontend

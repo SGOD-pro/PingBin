@@ -1,0 +1,11 @@
+[project]
+name = "reward-engine"
+version = "1.0.0"
+description = "Dynamic Vendor & Auto-Coupon Incentive Generation Engine"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
