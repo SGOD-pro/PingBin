@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 
 test('Capture full UI screenshots with real images and modals', async ({ page }) => {
   await page.goto('http://localhost:5173');

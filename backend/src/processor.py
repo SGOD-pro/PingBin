@@ -547,6 +547,10 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
     http_method = event.get("httpMethod") or (event.get("requestContext", {}).get("http", {}).get("method"))
     path = event.get("resource") or event.get("path") or (event.get("requestContext", {}).get("http", {}).get("path"))
 
+    # GET /health
+    if http_method == "GET" and path in ("/health", "/health/", "/"):
+        return ok({"status": "healthy", "service": "PingBin", "timestamp": datetime.now(timezone.utc).isoformat()})
+
     # GET /reports
     if http_method == "GET" and path in ("/reports", "/reports/"):
         return ok(get_active_reports())

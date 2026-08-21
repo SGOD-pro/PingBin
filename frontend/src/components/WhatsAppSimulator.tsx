@@ -43,17 +43,27 @@ export function WhatsAppSimulator() {
   const [citizenMessages, setCitizenMessages] = useState<ChatMessage[]>([]);
   const [workerMessages, setWorkerMessages] = useState<ChatMessage[]>([]);
 
-  const citizenChatEndRef = useRef<HTMLDivElement>(null);
-  const workerChatEndRef = useRef<HTMLDivElement>(null);
+  const citizenContainerRef = useRef<HTMLDivElement>(null);
+  const workerContainerRef = useRef<HTMLDivElement>(null);
   const timeoutsRef = useRef<any[]>([]);
 
-  // Auto-scroll chats
+  // Auto-scroll chats inside their containers only (prevents page jump)
   useEffect(() => {
-    citizenChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (citizenContainerRef.current) {
+      citizenContainerRef.current.scrollTo({
+        top: citizenContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
   }, [citizenMessages]);
 
   useEffect(() => {
-    workerChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (workerContainerRef.current) {
+      workerContainerRef.current.scrollTo({
+        top: workerContainerRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
   }, [workerMessages]);
 
   // Clear pending timers on unmount
@@ -304,7 +314,7 @@ export function WhatsAppSimulator() {
               Real-Time WhatsApp Citizen &amp; Worker Orchestrator
             </h1>
             <p className="text-sm text-[#4a4a4a] leading-relaxed">
-              Experience the dual-sided real-time telemetry workflow: Citizen WhatsApp intake $\rightarrow$ Bedrock Nova Lite AI triage $\rightarrow$ Haversine automated dispatch $\rightarrow$ Two-Gate anti-fake-work verification $\rightarrow$ Hyperlocal reward delivery.
+              Experience the dual-sided real-time telemetry workflow: Citizen WhatsApp intake ➔ Bedrock Nova Lite AI triage ➔ Haversine automated dispatch ➔ Two-Gate anti-fake-work verification ➔ Hyperlocal reward delivery.
             </p>
           </div>
 
@@ -430,7 +440,10 @@ export function WhatsAppSimulator() {
           </div>
 
           {/* Chat Messages Feed */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-[#efeae2] bg-[radial-gradient(#d1d7db_1px,transparent_1px)] [background-size:16px_16px]">
+          <div
+            ref={citizenContainerRef}
+            className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-[#efeae2] bg-[radial-gradient(#d1d7db_1px,transparent_1px)] [background-size:16px_16px]"
+          >
             {citizenMessages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#667781] space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-white border border-[#d1d7db] flex items-center justify-center shadow-xs text-[#008069]">
@@ -531,7 +544,6 @@ export function WhatsAppSimulator() {
                 </div>
               ))
             )}
-            <div ref={citizenChatEndRef} />
           </div>
 
           {/* Fake Input Bar */}
@@ -574,7 +586,10 @@ export function WhatsAppSimulator() {
           </div>
 
           {/* Chat Messages Feed */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-[#efeae2] bg-[radial-gradient(#d1d7db_1px,transparent_1px)] [background-size:16px_16px]">
+          <div
+            ref={workerContainerRef}
+            className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-[#efeae2] bg-[radial-gradient(#d1d7db_1px,transparent_1px)] [background-size:16px_16px]"
+          >
             {workerMessages.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#667781] space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-white border border-[#d1d7db] flex items-center justify-center shadow-xs text-[#0a3a40]">
@@ -655,7 +670,6 @@ export function WhatsAppSimulator() {
                 </div>
               </div>
             )}
-            <div ref={workerChatEndRef} />
           </div>
 
           {/* Fake Input Bar */}

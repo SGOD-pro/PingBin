@@ -17,7 +17,6 @@
 import { test, expect, request } from '@playwright/test';
 
 const API = 'http://localhost:8000';
-const CITIZEN_PHONE = '+919000000001';
 const WORKER_PHONE = '+919000000002';
 
 // ─── API helpers ────────────────────────────────────────────────────────────
@@ -127,12 +126,7 @@ test('Full pipeline: citizen report → auto-dispatch → worker arrival → fin
       timestamp: new Date().toISOString(),
     });
 
-    // 4. Simulate adequate time passing (30 seconds real sim is too slow;
-    //    we set arrival time 40 min in the past directly by re-using the existing
-    //    worker-done path with a timestamp that satisfies the truth score threshold)
-    const pastArrival = new Date(Date.now() - 35 * 60 * 1000).toISOString();
-
-    // Re-check report is in_progress
+    // 4. Check report is in_progress
     await new Promise((r) => setTimeout(r, 2000));
     const inProgressReports = await getActiveReports(ctx);
     const inProg = inProgressReports.find((r) => r.citizen_phone === citizen && r.status === 'in_progress');

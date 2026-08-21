@@ -1,0 +1,15 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "PingBin"
+resolve_s3 = true
+s3_prefix = "PingBin"
+profile = "aws"
+confirm_changeset = false
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "ReportsTableName=\"Reports\" WorkersTableName=\"Workers\" VendorsTableName=\"Vendors\" CouponsTableName=\"Coupons\" ImagesBucketName=\"cleanloop-images-ap-south-1\""
+image_repositories = []
+disable_rollback = true
+
+[default.global.parameters]
+region = "ap-south-1"

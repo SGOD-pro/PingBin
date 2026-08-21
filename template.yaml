@@ -13,14 +13,12 @@ Globals:
       - x86_64
     Environment:
       Variables:
-        AWS_REGION: !Ref AWS::Region
-        AWS_PROFILE: ""
         SQS_QUEUE_URL: !Ref PingBinQueue
-        DYNAMODB_TABLE_REPORTS: !Ref ReportsTable
-        DYNAMODB_TABLE_WORKERS: !Ref WorkersTable
-        DYNAMODB_TABLE_VENDORS: !Ref VendorsTable
-        DYNAMODB_TABLE_COUPONS: !Ref CouponsTable
-        S3_BUCKET_IMAGES: !Ref ImagesBucket
+        DYNAMODB_TABLE_REPORTS: !Ref ReportsTableName
+        DYNAMODB_TABLE_WORKERS: !Ref WorkersTableName
+        DYNAMODB_TABLE_VENDORS: !Ref VendorsTableName
+        DYNAMODB_TABLE_COUPONS: !Ref CouponsTableName
+        S3_BUCKET_IMAGES: !Ref ImagesBucketName
         BEDROCK_MODEL_ID: amazon.nova-lite-v1:0
         WORKER_SEARCH_RADIUS_KM: "10.0"
         VENDOR_LOCAL_RADIUS_KM: "15.0"
@@ -41,6 +39,26 @@ Parameters:
     Type: String
     Default: 'whatsapp:+14155238886'
     Description: Twilio WhatsApp Sandbox Number
+  ReportsTableName:
+    Type: String
+    Default: 'Reports'
+    Description: DynamoDB Reports table name
+  WorkersTableName:
+    Type: String
+    Default: 'Workers'
+    Description: DynamoDB Workers table name
+  VendorsTableName:
+    Type: String
+    Default: 'Vendors'
+    Description: DynamoDB Vendors table name
+  CouponsTableName:
+    Type: String
+    Default: 'Coupons'
+    Description: DynamoDB Coupons table name
+  ImagesBucketName:
+    Type: String
+    Default: 'cleanloop-images-ap-south-1'
+    Description: S3 Bucket for waste images
 
 Resources:
   # -------------------------------------------------------------
@@ -69,83 +87,6 @@ Resources:
       QueueName: pingbin-messages
       VisibilityTimeout: 65
       MessageRetentionPeriod: 86400
-
-  # -------------------------------------------------------------
-  # S3 Bucket for Before / After Photos
-  # -------------------------------------------------------------
-  ImagesBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub 'pingbin-images-${AWS::AccountId}-${AWS::Region}'
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        BlockPublicPolicy: false
-        IgnorePublicAcls: false
-        RestrictPublicBuckets: false
-
-  # -------------------------------------------------------------
-  # DynamoDB Tables
-  # -------------------------------------------------------------
-  ReportsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: Reports
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: report_id
-          AttributeType: S
-        - AttributeName: status
-          AttributeType: S
-        - AttributeName: created_at
-          AttributeType: S
-      KeySchema:
-        - AttributeName: report_id
-          KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: status-index
-          KeySchema:
-            - AttributeName: status
-              KeyType: HASH
-            - AttributeName: created_at
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-
-  WorkersTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: Workers
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: worker_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: worker_id
-          KeyType: HASH
-
-  VendorsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: Vendors
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: vendor_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: vendor_id
-          KeyType: HASH
-
-  CouponsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: Coupons
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: coupon_id
-          AttributeType: S
-      KeySchema:
-        - AttributeName: coupon_id
-          KeyType: HASH
 
   # -------------------------------------------------------------
   # Lambda 1: Webhook Receiver (<500ms Twilio response -> SQS)
@@ -182,15 +123,15 @@ Resources:
       MemorySize: 512
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref ReportsTable
+            TableName: !Ref ReportsTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref WorkersTable
+            TableName: !Ref WorkersTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref VendorsTable
+            TableName: !Ref VendorsTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref CouponsTable
+            TableName: !Ref CouponsTableName
         - S3CrudPolicy:
-            BucketName: !Ref ImagesBucket
+            BucketName: !Ref ImagesBucketName
         - Statement:
             - Effect: Allow
               Action:
@@ -202,6 +143,12 @@ Resources:
           Properties:
             Queue: !GetAtt PingBinQueue.Arn
             BatchSize: 5
+        GetHealth:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /health
+            Method: GET
         GetReports:
           Type: HttpApi
           Properties:

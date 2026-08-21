@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     # AWS
     AWS_REGION: str = "ap-south-1"
-    AWS_PROFILE: str = "aws"
+    AWS_PROFILE: str | None = None
     DYNAMODB_TABLE_REPORTS: str = "Reports"
     DYNAMODB_TABLE_WORKERS: str = "Workers"
     DYNAMODB_TABLE_VENDORS: str = "Vendors"
@@ -37,15 +37,18 @@ class Settings(BaseSettings):
     def get_boto3_session(self) -> boto3.Session:
         """Create a boto3 Session using the configured profile and region."""
         kwargs = {}
-        if self.AWS_PROFILE:
-            kwargs["profile_name"] = self.AWS_PROFILE
-        if self.AWS_REGION:
-            kwargs["region_name"] = self.AWS_REGION
+        if self.AWS_PROFILE and self.AWS_PROFILE.strip():
+            kwargs["profile_name"] = self.AWS_PROFILE.strip()
+        if self.AWS_REGION and self.AWS_REGION.strip():
+            kwargs["region_name"] = self.AWS_REGION.strip()
         try:
             return boto3.Session(**kwargs)
         except Exception:
-            # Fall back to default session if profile is not configured on Lambda
-            return boto3.Session(region_name=self.AWS_REGION)
+            # Fall back to default IAM role session on Lambda
+            region_kwargs = {}
+            if self.AWS_REGION and self.AWS_REGION.strip():
+                region_kwargs["region_name"] = self.AWS_REGION.strip()
+            return boto3.Session(**region_kwargs)
 
 
 settings = Settings()

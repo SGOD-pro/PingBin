@@ -32,7 +32,6 @@ wheels/
 node_modules/
 # AWS SAM
 .aws-sam/
-samconfig.toml
 
 # Logs
 *.log
