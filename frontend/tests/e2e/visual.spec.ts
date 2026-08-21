@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 
 test('Capture full UI screenshots with real images and modals', async ({ page }) => {
-  await page.goto('http://localhost:5173');
+  await page.goto('/');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(1000);
 

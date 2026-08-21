@@ -21,6 +21,15 @@ const WORKER_PHONE = '+919000000002';
 
 // ─── API helpers ────────────────────────────────────────────────────────────
 
+async function isBackendAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API}/health`, { signal: AbortSignal.timeout(1500) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function simulateMessage(ctx: Awaited<ReturnType<typeof request.newContext>>, payload: object) {
   const res = await ctx.post(`${API}/dev/simulate-message`, {
     data: payload,
@@ -79,6 +88,10 @@ async function ensureFreeWorker(ctx: Awaited<ReturnType<typeof request.newContex
 // ===========================================================================
 
 test('Full pipeline: citizen report → auto-dispatch → worker arrival → finish → resolved', async () => {
+  if (!(await isBackendAvailable())) {
+    test.skip(true, 'Backend server not available at http://localhost:8000');
+    return;
+  }
   const ctx = await request.newContext({ timeout: 20_000 });
   await ensureFreeWorker(ctx);
 
@@ -164,6 +177,10 @@ test('Full pipeline: citizen report → auto-dispatch → worker arrival → fin
 // ===========================================================================
 
 test('Too-fast finish lands in needs_review with Gate B truth-score reason', async () => {
+  if (!(await isBackendAvailable())) {
+    test.skip(true, 'Backend server not available at http://localhost:8000');
+    return;
+  }
   const ctx = await request.newContext({ timeout: 20_000 });
   await ensureFreeWorker(ctx);
 
@@ -244,6 +261,10 @@ test('Too-fast finish lands in needs_review with Gate B truth-score reason', asy
 // ===========================================================================
 
 test('POST /vendors creates vendor; GET /vendors returns it with templates', async () => {
+  if (!(await isBackendAvailable())) {
+    test.skip(true, 'Backend server not available at http://localhost:8000');
+    return;
+  }
   const ctx = await request.newContext({ timeout: 10_000 });
 
   const vendorName = `TestVendor_${Date.now()}`;
@@ -296,7 +317,7 @@ test('POST /vendors creates vendor; GET /vendors returns it with templates', asy
 // ===========================================================================
 
 test('Frontend: Command Center and Operations & Rewards tabs navigate correctly', async ({ page }) => {
-  await page.goto('http://localhost:5173');
+  await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   // Should be on Command Center by default
@@ -326,7 +347,7 @@ test('Frontend: Command Center and Operations & Rewards tabs navigate correctly'
 // ===========================================================================
 
 test('Frontend: Add Vendor dialog opens with correct form fields', async ({ page }) => {
-  await page.goto('http://localhost:5173');
+  await page.goto('/');
   await page.waitForLoadState('networkidle');
 
   // Navigate to Operations & Rewards
@@ -350,6 +371,10 @@ test('Frontend: Add Vendor dialog opens with correct form fields', async ({ page
 // ===========================================================================
 
 test('GET /coupons returns an array', async () => {
+  if (!(await isBackendAvailable())) {
+    test.skip(true, 'Backend server not available at http://localhost:8000');
+    return;
+  }
   const ctx = await request.newContext({ timeout: 10_000 });
   const res = await ctx.get(`${API}/coupons`);
   expect(res.status()).toBe(200);
