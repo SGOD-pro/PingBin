@@ -95,7 +95,7 @@ export function App() {
     <div className="min-h-screen bg-[#fffaf0] text-[#0a0a0a] flex flex-col font-sans selection:bg-[#a4d4c5] selection:text-[#0a0a0a]">
       {/* ── Top Navigation Bar ─────────────────────────────────────────────── */}
       <header className="bg-[#fffaf0]/95 backdrop-blur-md border-b border-[#e5e5e5] sticky top-0 z-40 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-aut py-2.5 px-3 flex items-center justify-between gap-4">
           {/* Logo & Brand ID */}
           <div className="flex items-center gap-3 shrink-0">
             <div className="w-10 h-10 rounded-2xl bg-[#0a0a0a] text-white flex items-center justify-center shadow-md shrink-0">
@@ -106,7 +106,7 @@ export function App() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-display font-bold text-lg tracking-tight text-[#0a0a0a] leading-none">
-                  Clean<span className="text-[#ff4d8b]">Loop</span>
+                  Ping<span className="text-[#ff4d8b]">Bin</span>
                 </span>
                 <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-[#faf5e8] text-[#0a0a0a] border border-[#e5e5e5]">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#22c55e] animate-pulse" />
