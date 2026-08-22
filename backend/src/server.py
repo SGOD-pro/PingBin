@@ -21,10 +21,20 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for frontend dashboard
+# Enable CORS dynamically for frontend dashboard and deployed Vercel URL
+cors_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+if settings.FRONTEND_URL and settings.FRONTEND_URL.strip():
+    clean_origin = settings.FRONTEND_URL.strip().rstrip("/")
+    if clean_origin not in cors_origins:
+        cors_origins.append(clean_origin)
+cors_origins.append("*")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     )
 
     ENV: str = "dev"
+    FRONTEND_URL: str = "https://ping-bin-qorc.vercel.app"
 
     # AWS
     AWS_REGION: str = "ap-south-1"

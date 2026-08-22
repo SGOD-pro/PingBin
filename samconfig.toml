@@ -7,7 +7,7 @@ s3_prefix = "PingBin"
 profile = "aws"
 confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "ReportsTableName=\"Reports\" WorkersTableName=\"Workers\" VendorsTableName=\"Vendors\" CouponsTableName=\"Coupons\" ImagesBucketName=\"cleanloop-images-ap-south-1\""
+parameter_overrides = "ReportsTableName=\"Reports\" WorkersTableName=\"Workers\" VendorsTableName=\"Vendors\" CouponsTableName=\"Coupons\" ImagesBucketName=\"cleanloop-images-ap-south-1\" FrontendUrl=\"https://ping-bin-qorc.vercel.app\""
 image_repositories = []
 disable_rollback = true
 

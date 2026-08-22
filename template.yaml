@@ -14,6 +14,7 @@ Globals:
     Environment:
       Variables:
         ENV: production
+        FRONTEND_URL: !Ref FrontendUrl
         SQS_QUEUE_URL: !Ref PingBinQueue
         DYNAMODB_TABLE_REPORTS: !Ref ReportsTableName
         DYNAMODB_TABLE_WORKERS: !Ref WorkersTableName
