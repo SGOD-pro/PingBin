@@ -1,4 +1,5 @@
 import json
+import base64
 import logging
 import os
 import time
@@ -64,6 +65,12 @@ def handle_webhook(event: dict) -> dict:
     """
     try:
         body_str = event.get("body", "")
+        if event.get("isBase64Encoded") and isinstance(body_str, str):
+            try:
+                body_str = base64.b64decode(body_str).decode("utf-8")
+            except Exception as b64_err:
+                logger.warning(f"Failed to decode base64 body: {b64_err}")
+
         if not body_str:
             return {
                 "statusCode": 200,

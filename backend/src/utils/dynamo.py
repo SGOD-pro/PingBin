@@ -245,6 +245,75 @@ def find_in_progress_report_for_worker(worker_phone: str) -> dict | None:
     return None
 
 
+def record_worker_arrival_step(
+    report_id: str,
+    start_photo_url: str | None = None,
+    start_location: dict | None = None,
+) -> dict:
+    """Incrementally record arrival photo or arrival location step in DynamoDB."""
+    if not reports_table:
+        return {}
+    set_clauses = []
+    expr_vals: dict = {}
+    if start_photo_url:
+        set_clauses.append("start_photo_url = :spu")
+        set_clauses.append("arrival_photo_received = :apr")
+        expr_vals[":spu"] = start_photo_url
+        expr_vals[":apr"] = True
+    if start_location:
+        set_clauses.append("start_location = :sloc")
+        set_clauses.append("arrival_location = :sloc")
+        set_clauses.append("arrival_location_received = :alr")
+        expr_vals[":sloc"] = {
+            "lat": Decimal(str(start_location.get("lat", 0))),
+            "lng": Decimal(str(start_location.get("lng", 0))),
+        }
+        expr_vals[":alr"] = True
+
+    if set_clauses:
+        reports_table.update_item(
+            Key={"report_id": report_id},
+            UpdateExpression="SET " + ", ".join(set_clauses),
+            ExpressionAttributeValues=expr_vals,
+        )
+    return get_report_by_id(report_id) or {}
+
+
+def record_worker_finish_step(
+    report_id: str,
+    finish_photo_url: str | None = None,
+    finish_location: dict | None = None,
+) -> dict:
+    """Incrementally record finish photo or finish location step in DynamoDB."""
+    if not reports_table:
+        return {}
+    set_clauses = []
+    expr_vals: dict = {}
+    if finish_photo_url:
+        set_clauses.append("finish_photo_url = :fpu")
+        set_clauses.append("photo_after_url = :fpu")
+        set_clauses.append("finish_photo_received = :fpr")
+        expr_vals[":fpu"] = finish_photo_url
+        expr_vals[":fpr"] = True
+    if finish_location:
+        set_clauses.append("finish_location = :floc")
+        set_clauses.append("location_after = :floc")
+        set_clauses.append("finish_location_received = :flr")
+        expr_vals[":floc"] = {
+            "lat": Decimal(str(finish_location.get("lat", 0))),
+            "lng": Decimal(str(finish_location.get("lng", 0))),
+        }
+        expr_vals[":flr"] = True
+
+    if set_clauses:
+        reports_table.update_item(
+            Key={"report_id": report_id},
+            UpdateExpression="SET " + ", ".join(set_clauses),
+            ExpressionAttributeValues=expr_vals,
+        )
+    return get_report_by_id(report_id) or {}
+
+
 def set_report_worker_started(
     report_id: str,
     arrival_time: str,
@@ -254,10 +323,12 @@ def set_report_worker_started(
     """Record worker arrival: photo, location, arrival_time. Status -> in_progress."""
     if not reports_table:
         return
-    update_expr = "SET #s = :s, arrival_time = :at, start_time = :at"
+    update_expr = "SET #s = :s, arrival_time = :at, start_time = :at, arrival_photo_received = :apr, arrival_location_received = :alr"
     expr_vals: dict = {
         ":s": "in_progress",
         ":at": arrival_time,
+        ":apr": True,
+        ":alr": True,
     }
     if start_photo_url:
         update_expr += ", start_photo_url = :spu"

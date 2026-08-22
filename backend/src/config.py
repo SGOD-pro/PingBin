@@ -1,47 +1,74 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-import boto3
 import os
+import boto3
+from pathlib import Path
 
 
-class Settings(BaseSettings):
-    """PingBin backend environment configuration using Pydantic BaseSettings."""
+def _load_env_files():
+    """Load key-value pairs from .env files if present (for local dev)."""
+    current_dir = Path(__file__).resolve().parent
+    candidates = [
+        current_dir / ".env",
+        current_dir.parent / ".env",
+        current_dir.parent.parent / ".env",
+    ]
+    for env_path in candidates:
+        if env_path.is_file():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k, v = k.strip(), v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+            except Exception:
+                pass
 
-    model_config = SettingsConfigDict(
-        env_file=(".env", "../.env", "../../.env"),
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
 
-    ENV: str = "dev"
-    FRONTEND_URL: str = "https://ping-bin-qorc.vercel.app"
+_load_env_files()
 
-    # AWS
-    AWS_REGION: str = "ap-south-1"
-    AWS_PROFILE: str | None = None
-    DYNAMODB_TABLE_REPORTS: str = "Reports"
-    DYNAMODB_TABLE_WORKERS: str = "Workers"
-    DYNAMODB_TABLE_VENDORS: str = "Vendors"
-    DYNAMODB_TABLE_COUPONS: str = "Coupons"
-    S3_BUCKET_IMAGES: str = "pingbin-images"
-    SQS_QUEUE_URL: str = "https://sqs.ap-south-1.amazonaws.com/123456789012/pingbin-messages"
-    BEDROCK_MODEL_ID: str = "amazon.nova-lite-v1:0"
-    # Max radius (km) for free-worker search during dispatch
-    WORKER_SEARCH_RADIUS_KM: float = 10.0
-    # Max radius (km) for local vendor coupon matching
-    VENDOR_LOCAL_RADIUS_KM: float = 15.0
-    # Testing speedup flag: dynamically read from TEST_MODE_SECONDS in .env/environment (defaults to False in prod)
-    TEST_MODE_SECONDS: bool = False
 
-    # Twilio WhatsApp
-    TWILIO_ACCOUNT_SID: str = ""
-    TWILIO_AUTH_TOKEN: str = ""
-    TWILIO_WHATSAPP_FROM: str = "whatsapp:+14155238886"
+class Settings:
+    """PingBin backend environment configuration with zero external dependencies."""
+
+    def __init__(self):
+        self.ENV: str = os.environ.get("ENV", "production")
+        self.FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://ping-bin-qorc.vercel.app")
+
+        # AWS Configuration
+        self.AWS_REGION: str = os.environ.get("AWS_REGION", "ap-south-1")
+        self.AWS_PROFILE: str | None = os.environ.get("AWS_PROFILE") or None
+        self.DYNAMODB_TABLE_REPORTS: str = os.environ.get("DYNAMODB_TABLE_REPORTS", "Reports")
+        self.DYNAMODB_TABLE_WORKERS: str = os.environ.get("DYNAMODB_TABLE_WORKERS", "Workers")
+        self.DYNAMODB_TABLE_VENDORS: str = os.environ.get("DYNAMODB_TABLE_VENDORS", "Vendors")
+        self.DYNAMODB_TABLE_COUPONS: str = os.environ.get("DYNAMODB_TABLE_COUPONS", "Coupons")
+        self.S3_BUCKET_IMAGES: str = os.environ.get("S3_BUCKET_IMAGES", "cleanloop-images-ap-south-1")
+        self.SQS_QUEUE_URL: str = os.environ.get(
+            "SQS_QUEUE_URL",
+            "https://sqs.ap-south-1.amazonaws.com/123456789012/pingbin-messages",
+        )
+        self.BEDROCK_MODEL_ID: str = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-lite-v1:0")
+
+        # Thresholds
+        self.WORKER_SEARCH_RADIUS_KM: float = float(os.environ.get("WORKER_SEARCH_RADIUS_KM", "10.0"))
+        self.VENDOR_LOCAL_RADIUS_KM: float = float(os.environ.get("VENDOR_LOCAL_RADIUS_KM", "15.0"))
+        self.TEST_MODE_SECONDS: bool = os.environ.get("TEST_MODE_SECONDS", "false").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+
+        # Twilio WhatsApp
+        self.TWILIO_ACCOUNT_SID: str = os.environ.get("TWILIO_ACCOUNT_SID", "")
+        self.TWILIO_AUTH_TOKEN: str = os.environ.get("TWILIO_AUTH_TOKEN", "")
+        self.TWILIO_WHATSAPP_FROM: str = os.environ.get("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
 
     def get_boto3_session(self) -> boto3.Session:
         """Create a boto3 Session.
 
         If ENV == 'dev', applies local AWS_PROFILE and AWS_REGION.
-        In production / Lambda deployment, directly creates boto3.Session() using the IAM role.
+        In production (AWS Lambda), directly creates boto3.Session() using IAM role.
         """
         if self.ENV and self.ENV.strip().lower() == "dev":
             kwargs = {}
@@ -54,7 +81,7 @@ class Settings(BaseSettings):
             except Exception:
                 pass
 
-        # Production / Lambda direct IAM session
+        # Production / AWS Lambda direct IAM role session
         return boto3.Session()
 
 

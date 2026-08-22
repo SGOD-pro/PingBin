@@ -1,4 +1,5 @@
 import json
+import base64
 import logging
 from datetime import datetime, timezone
 from urllib.parse import parse_qs
@@ -23,6 +24,13 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
     """
     try:
         body = event.get("body", "")
+        # Decode base64 if encoded by AWS API Gateway
+        if event.get("isBase64Encoded") and isinstance(body, str):
+            try:
+                body = base64.b64decode(body).decode("utf-8")
+            except Exception as b64_err:
+                logger.warning(f"Failed to decode base64 body: {b64_err}")
+
         if isinstance(body, str):
             parsed = parse_qs(body)
         elif isinstance(body, dict):
