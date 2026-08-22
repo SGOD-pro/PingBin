@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { ReportItem } from '../types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { getApiUrl } from '../lib/api';
 
 export function useReports() {
+  const API_URL = getApiUrl();
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);

@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { WorkerItem } from '../types';
+import { getApiUrl } from '../lib/api';
 
 export function useWorkers() {
   const [workers, setWorkers] = useState<WorkerItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+  const API_URL = getApiUrl();
 
   const fetchWorkers = useCallback(async () => {
     try {

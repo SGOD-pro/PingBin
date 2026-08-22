@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { VendorItem, CouponTemplate } from '../types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { getApiUrl } from '../lib/api';
 
 export function useVendors() {
+  const API_URL = getApiUrl();
   const [vendors, setVendors] = useState<VendorItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);

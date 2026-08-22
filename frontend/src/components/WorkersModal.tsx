@@ -112,7 +112,7 @@ export function WorkersModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4.5 border-b border-[#e5e5e5] flex items-center justify-between bg-[#faf5e8]">
+        <div className="px-4 py-2.5 border-b border-[#e5e5e5] flex items-center justify-between bg-[#faf5e8]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#0a0a0a] text-white flex items-center justify-center font-bold shadow-sm">
               <Users className="w-4.5 h-4.5 text-[#a4d4c5]" />

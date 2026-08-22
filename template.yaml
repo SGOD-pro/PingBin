@@ -13,6 +13,7 @@ Globals:
       - x86_64
     Environment:
       Variables:
+        ENV: production
         SQS_QUEUE_URL: !Ref PingBinQueue
         DYNAMODB_TABLE_REPORTS: !Ref ReportsTableName
         DYNAMODB_TABLE_WORKERS: !Ref WorkersTableName

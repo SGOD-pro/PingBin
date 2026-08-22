@@ -28,7 +28,7 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4.5 border-b border-[#e5e5e5] flex items-center justify-between bg-[#faf5e8]">
+        <div className="px-4 py-2.5 border-b border-[#e5e5e5] flex items-center justify-between bg-[#faf5e8]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#0a0a0a] text-white flex items-center justify-center font-bold text-xs font-mono shadow-sm">
               #{report.report_id.slice(0, 4)}

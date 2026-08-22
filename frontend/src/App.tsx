@@ -24,6 +24,8 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 
+import { getApiUrl } from './lib/api';
+
 type ActiveTab = 'dashboard' | 'operations' | 'live-demo';
 
 export function App() {
@@ -43,7 +45,7 @@ export function App() {
   const handleSimulateReport = async () => {
     setIsSimulating(true);
     setSimStatus('Simulating citizen WhatsApp photo intake & Nova Lite ingestion...');
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const API_URL = getApiUrl();
 
     const realImages = [
       `${API_URL}/images/dustbins-india-T5BHA9.jpg`,

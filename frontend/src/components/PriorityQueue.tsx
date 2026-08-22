@@ -36,7 +36,7 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
   return (
     <div className="bg-[#faf5e8] rounded-3xl border border-[#e5e5e5] shadow-sm overflow-hidden flex flex-col transition-all">
       {/* Header */}
-      <div className="px-6 py-4.5 border-b border-[#e5e5e5] bg-[#faf5e8] flex flex-wrap items-center justify-between gap-3">
+      <div className="px-4 py-2.5 border-b border-[#e5e5e5] bg-[#faf5e8] flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-[#ffe9f1] flex items-center justify-center text-[#ff4d8b] shadow-xs shrink-0">
             <Flame className="w-5 h-5" />

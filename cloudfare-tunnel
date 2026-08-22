@@ -1,1 +1,43 @@
 cloudflared tunnel --url http://localhost:8000 --protocol http2
+
+                                                                                 
+  Run this command in your terminal with your new credentials:                    
+                                                                                  
+    # Update Lambda 2 (Processor)                                                 
+    aws lambda update-function-configuration \                                    
+      --function-name pingbin-processor \                                         
+      --profile aws \                                                             
+      --region ap-south-1 \                                                       
+      --environment "Variables={TWILIO_ACCOUNT_SID=NEW_SID,                       
+  TWILIO_AUTH_TOKEN=NEW_TOKEN,TWILIO_WHATSAPP_FROM=whatsapp:+14155238886,         
+  SQS_QUEUE_URL=https://sqs.ap-south-1.amazonaws.com/445567096027/pingbin-        
+  messages,DYNAMODB_TABLE_REPORTS=Reports,DYNAMODB_TABLE_WORKERS=Workers,         
+  DYNAMODB_TABLE_VENDORS=Vendors,DYNAMODB_TABLE_COUPONS=Coupons,                  
+  S3_BUCKET_IMAGES=cleanloop-images-ap-south-1,BEDROCK_MODEL_ID=amazon.nova-lite- 
+  v1:0,WORKER_SEARCH_RADIUS_KM=10.0,VENDOR_LOCAL_RADIUS_KM=15.0,                  
+  TEST_MODE_SECONDS=false}"                                                       
+                                                                                  
+    # Update Lambda 1 (Webhook Receiver)                                          
+    aws lambda update-function-configuration \                                    
+      --function-name pingbin-webhook-receiver \                                  
+      --profile aws \                                                             
+      --region ap-south-1 \                                                       
+      --environment "Variables={TWILIO_ACCOUNT_SID=NEW_SID,                       
+  TWILIO_AUTH_TOKEN=NEW_TOKEN,TWILIO_WHATSAPP_FROM=whatsapp:+14155238886,         
+  SQS_QUEUE_URL=https://sqs.ap-south-1.amazonaws.com/445567096027/pingbin-        
+  messages,DYNAMODB_TABLE_REPORTS=Reports,DYNAMODB_TABLE_WORKERS=Workers,         
+  DYNAMODB_TABLE_VENDORS=Vendors,DYNAMODB_TABLE_COUPONS=Coupons,                  
+  S3_BUCKET_IMAGES=cleanloop-images-ap-south-1,BEDROCK_MODEL_ID=amazon.nova-lite- 
+  v1:0,WORKER_SEARCH_RADIUS_KM=10.0,VENDOR_LOCAL_RADIUS_KM=15.0,                  
+  TEST_MODE_SECONDS=false}"                                                       
+  ──────                                                                          
+  #### Option C: Via sam deploy
+  
+  Pass the new credentials as parameter overrides:
+  
+    sam deploy \
+      --parameter-overrides TwilioAccountSid="NEW_SID" TwilioAuthToken="NEW_TOKEN"
+  \
+      --profile aws \
+      --region ap-south-1 \
+      --no-confirm-changeset
