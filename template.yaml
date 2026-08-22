@@ -20,6 +20,7 @@ Globals:
         DYNAMODB_TABLE_WORKERS: !Ref WorkersTableName
         DYNAMODB_TABLE_VENDORS: !Ref VendorsTableName
         DYNAMODB_TABLE_COUPONS: !Ref CouponsTableName
+        DYNAMODB_TABLE_WAREHOUSES: !Ref WarehousesTableName
         S3_BUCKET_IMAGES: !Ref ImagesBucketName
         BEDROCK_MODEL_ID: amazon.nova-lite-v1:0
         WORKER_SEARCH_RADIUS_KM: "10.0"
@@ -57,6 +58,10 @@ Parameters:
     Type: String
     Default: 'Coupons'
     Description: DynamoDB Coupons table name
+  WarehousesTableName:
+    Type: String
+    Default: 'Warehouses'
+    Description: DynamoDB Warehouses table name
   ImagesBucketName:
     Type: String
     Default: 'cleanloop-images-ap-south-1'
@@ -144,6 +149,8 @@ Resources:
             TableName: !Ref VendorsTableName
         - DynamoDBCrudPolicy:
             TableName: !Ref CouponsTableName
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WarehousesTableName
         - S3CrudPolicy:
             BucketName: !Ref ImagesBucketName
         - Statement:
@@ -168,6 +175,24 @@ Resources:
           Properties:
             ApiId: !Ref PingBinHttpApi
             Path: /reports
+            Method: GET
+        PostReportReject:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /reports/{id}/reject
+            Method: POST
+        PostReportApprove:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /reports/{id}/approve
+            Method: POST
+        GetWarehouses:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /warehouses
             Method: GET
         GetWorkers:
           Type: HttpApi

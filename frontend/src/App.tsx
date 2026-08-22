@@ -5,6 +5,7 @@ import { StatsBar } from './components/StatsBar';
 import { ClusterMap } from './components/ClusterMap';
 import { PriorityQueue } from './components/PriorityQueue';
 import { NeedsReviewQueue } from './components/NeedsReviewQueue';
+import { WarehouseSection } from './components/WarehouseSection';
 import { ReportDetailModal } from './components/ReportDetailModal';
 import { WorkersModal } from './components/WorkersModal';
 import { AdminOperations } from './components/AdminOperations';
@@ -19,6 +20,7 @@ import {
   Users,
   MapPin,
   Settings2,
+  Warehouse,
   Cpu,
   Layers,
   ArrowUpRight,
@@ -26,7 +28,7 @@ import {
 
 import { getApiUrl } from './lib/api';
 
-type ActiveTab = 'dashboard' | 'operations' | 'live-demo';
+type ActiveTab = 'dashboard' | 'warehouses' | 'operations' | 'live-demo';
 
 export function App() {
   const { reports, loading: reportsLoading, lastUpdated, refresh: refreshReports } = useReports();
@@ -125,7 +127,7 @@ export function App() {
           <div className="flex items-center bg-[#faf5e8] border border-[#e5e5e5] rounded-full p-1 shadow-xs shrink-0">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs transition-all whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'dashboard'
                   ? 'bg-[#0a0a0a] text-white shadow-xs font-bold'
                   : 'text-[#6a6a6a] hover:text-[#0a0a0a] font-semibold'
@@ -135,8 +137,19 @@ export function App() {
               <span>Command Center</span>
             </button>
             <button
+              onClick={() => setActiveTab('warehouses')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs transition-all whitespace-nowrap cursor-pointer ${
+                activeTab === 'warehouses'
+                  ? 'bg-[#0a0a0a] text-white shadow-xs font-bold'
+                  : 'text-[#6a6a6a] hover:text-[#0a0a0a] font-semibold'
+              }`}
+            >
+              <Warehouse className="w-3.5 h-3.5 shrink-0" />
+              <span>Recycling &amp; Warehouses</span>
+            </button>
+            <button
               onClick={() => setActiveTab('operations')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs transition-all whitespace-nowrap ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === 'operations'
                   ? 'bg-[#0a0a0a] text-white shadow-xs font-bold'
                   : 'text-[#6a6a6a] hover:text-[#0a0a0a] font-semibold'
@@ -276,6 +289,7 @@ export function App() {
                   reports={reports}
                   selectedReport={selectedReport}
                   onSelectReport={setSelectedReport}
+                  onRefresh={handleRefresh}
                 />
                 <NeedsReviewQueue
                   reports={reports}
@@ -345,6 +359,14 @@ export function App() {
               </div>
             </div>
           </div>
+        ) : activeTab === 'warehouses' ? (
+          /* Recycling & Warehouses Tab */
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <WarehouseSection
+              reports={reports}
+              onSelectReport={setSelectedReport}
+            />
+          </div>
         ) : activeTab === 'operations' ? (
           /* Operations & Rewards Tab */
           <AdminOperations />
@@ -365,6 +387,7 @@ export function App() {
       <ReportDetailModal
         report={selectedReport}
         onClose={() => setSelectedReport(null)}
+        onRefresh={handleRefresh}
       />
     </div>
   );

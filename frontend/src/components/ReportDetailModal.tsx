@@ -1,22 +1,70 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { ReportItem } from '../types';
-import { X, MapPin, Sparkles, Clock, ExternalLink, Activity, CheckCircle2 } from 'lucide-react';
+import {
+  X,
+  MapPin,
+  Sparkles,
+  Clock,
+  ExternalLink,
+  Activity,
+  CheckCircle2,
+  ShieldAlert,
+  XCircle,
+  Loader2,
+  CheckCheck,
+} from 'lucide-react';
+import { getApiUrl } from '../lib/api';
 
 interface ReportDetailModalProps {
   report: ReportItem | null;
   onClose: () => void;
+  onRefresh?: () => void;
 }
 
 export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
   report,
   onClose,
+  onRefresh,
 }) => {
+  const API_URL = getApiUrl();
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+
   if (!report) return null;
 
+  const isPendingReview = report.status === 'pending_admin_review';
   const score = Math.round(report.priority_score || 0);
   let scoreBadgeBg = 'bg-[#a4d4c5] text-[#0a3a2a]';
   if (score >= 75) scoreBadgeBg = 'bg-[#ff4d8b] text-white';
   else if (score >= 50) scoreBadgeBg = 'bg-[#e8b94a] text-[#735100]';
+
+  const handleReject = async () => {
+    if (!confirm('Are you sure you want to reject and drop this report?')) return;
+    try {
+      setActionLoading(true);
+      const res = await fetch(`${API_URL}/reports/${report.report_id}/reject`, { method: 'POST' });
+      if (!res.ok) throw new Error('Reject failed');
+      if (onRefresh) onRefresh();
+      onClose();
+    } catch (err) {
+      alert(`Failed to reject report: ${err}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleApprove = async () => {
+    try {
+      setActionLoading(true);
+      const res = await fetch(`${API_URL}/reports/${report.report_id}/approve`, { method: 'POST' });
+      if (!res.ok) throw new Error('Approve failed');
+      if (onRefresh) onRefresh();
+      onClose();
+    } catch (err) {
+      alert(`Failed to approve & dispatch report: ${err}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <div
@@ -38,8 +86,14 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
                 <h3 className="font-display font-bold text-[#0a0a0a] text-base tracking-tight">
                   Incident Audit #{report.report_id.slice(0, 8)}
                 </h3>
-                <span className="text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-[#f5f0e0] text-[#0a0a0a] border border-[#e5e5e5]">
-                  {report.status}
+                <span
+                  className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                    isPendingReview
+                      ? 'bg-[#fef3c7] text-[#92400e] border border-[#f59e0b]'
+                      : 'bg-[#f5f0e0] text-[#0a0a0a] border border-[#e5e5e5]'
+                  }`}
+                >
+                  {isPendingReview ? 'Pending Admin Review' : report.status}
                 </span>
               </div>
               <p className="text-[11px] text-[#6a6a6a]">
@@ -57,6 +111,33 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-5 overflow-y-auto flex-1 bg-[#fffaf0]">
+          {/* Safety Gate Alert for Suspicious / Low-Confidence Reports */}
+          {isPendingReview && (
+            <div className="bg-[#fffbeb] border-2 border-[#f59e0b] rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <ShieldAlert className="w-5 h-5 text-[#d97706] shrink-0" />
+                <span className="font-display font-bold text-xs text-[#92400e] uppercase tracking-tight">
+                  Safety Gate Triggered — Awaiting Admin Determination
+                </span>
+              </div>
+              <p className="text-xs text-[#78350f] mt-1.5 leading-relaxed">
+                {report.suspicious_flag
+                  ? '⚠️ AI Model flagged this photo as SUSPICIOUS or synthetic. Worker dispatch has been halted to protect field crews.'
+                  : `⚠️ AI Vision confidence (${report.confidence ?? 0}%) is below the automated 25% dispatch threshold. Review photo proof below.`}
+              </p>
+              <div className="grid grid-cols-2 gap-2 mt-3 text-[11px] font-mono font-bold">
+                <div className="bg-white/80 p-2 rounded-lg border border-[#f59e0b]/30">
+                  <span className="text-[#92400e] block font-semibold text-[10px]">Model Confidence:</span>
+                  <span className="text-[#0a0a0a]">{report.confidence ?? 0}%</span>
+                </div>
+                <div className="bg-white/80 p-2 rounded-lg border border-[#f59e0b]/30">
+                  <span className="text-[#92400e] block font-semibold text-[10px]">Segregation Quality:</span>
+                  <span className="text-[#0a0a0a] capitalize">{report.segregation_quality || 'mixed'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Photos Comparison */}
           <div>
             <span className="text-[11px] font-mono font-bold text-[#6a6a6a] uppercase tracking-wider block mb-2">
@@ -72,7 +153,8 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
                     src={report.photo_before_url}
                     alt="Citizen Intake"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg';
+                      (e.target as HTMLImageElement).src =
+                        'http://localhost:8000/images/dustbins-india-T5BHA9.jpg';
                     }}
                     className="w-full h-40 object-cover rounded-xl border border-[#e5e5e5] shadow-inner bg-white"
                   />
@@ -92,14 +174,17 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
                     src={report.photo_after_url || report.finish_photo_url || ''}
                     alt="Worker Proof"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'http://localhost:8000/images/new-delhi-india-may-8-260nw-1974738929.webp';
+                      (e.target as HTMLImageElement).src =
+                        'http://localhost:8000/images/new-delhi-india-may-8-260nw-1974738929.webp';
                     }}
                     className="w-full h-40 object-cover rounded-xl border border-[#e5e5e5] shadow-inner bg-white"
                   />
                 ) : (
                   <div className="w-full h-40 bg-white rounded-xl border border-[#e5e5e5] flex flex-col items-center justify-center text-xs text-[#9a9a9a] p-4 text-center">
                     <Clock className="w-7 h-7 mb-1.5 text-[#9a9a9a] opacity-70" />
-                    <span className="font-medium text-[#6a6a6a]">Awaiting worker completion upload</span>
+                    <span className="font-medium text-[#6a6a6a]">
+                      Awaiting worker completion upload
+                    </span>
                   </div>
                 )}
               </div>
@@ -114,9 +199,11 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
                 Bedrock Nova Lite Multimodal Classifier
               </span>
               <span
-                className={`text-xs font-mono font-extrabold px-3 py-1 rounded-full shadow-xs ${scoreBadgeBg}`}
+                className={`text-xs font-mono font-extrabold px-3 py-1 rounded-full shadow-xs ${
+                  isPendingReview ? 'bg-[#fef3c7] text-[#92400e]' : scoreBadgeBg
+                }`}
               >
-                Score: {Number(report.priority_score || 0).toFixed(1)} / 100
+                {isPendingReview ? 'Score: Gated' : `Score: ${Number(report.priority_score || 0).toFixed(1)} / 100`}
               </span>
             </div>
 
@@ -172,7 +259,7 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
               <div>
                 <span className="text-[#6a6a6a] block text-[11px] font-medium">Assigned Worker:</span>
                 <span className="font-mono font-bold text-[#0a0a0a] text-xs">
-                  {report.worker_phone || 'Awaiting Dispatch'}
+                  {isPendingReview ? 'Gated (Admin Review)' : report.worker_phone || 'Awaiting Dispatch'}
                 </span>
               </div>
             </div>
@@ -230,19 +317,48 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-[#faf5e8] border-t border-[#e5e5e5] flex items-center justify-between">
+        <div className="px-6 py-4 bg-[#faf5e8] border-t border-[#e5e5e5] flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-[#6a6a6a]">
             <Activity className="w-4 h-4 text-[#22c55e]" />
             <span className="font-medium">PingBin Immutable Audit Log</span>
           </div>
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 text-xs font-bold rounded-xl bg-[#0a0a0a] text-white hover:bg-[#1f1f1f] transition-all active:scale-[0.98] shadow-md cursor-pointer"
-          >
-            Close Dossier
-          </button>
+
+          <div className="flex items-center gap-2">
+            {isPendingReview ? (
+              <>
+                <button
+                  onClick={handleReject}
+                  disabled={actionLoading}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-[#fee2e2] text-[#991b1b] hover:bg-[#fecaca] border border-[#f87171] transition-all cursor-pointer shadow-xs disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Reject Report
+                </button>
+                <button
+                  onClick={handleApprove}
+                  disabled={actionLoading}
+                  className="px-4 py-2 text-xs font-bold rounded-xl bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0] border border-[#4ade80] transition-all cursor-pointer shadow-xs disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {actionLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCheck className="w-4 h-4" />
+                  )}
+                  Approve &amp; Dispatch
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={onClose}
+                className="px-6 py-2.5 text-xs font-bold rounded-xl bg-[#0a0a0a] text-white hover:bg-[#1f1f1f] transition-all active:scale-[0.98] shadow-md cursor-pointer"
+              >
+                Close Dossier
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 };
+

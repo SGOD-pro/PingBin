@@ -8,21 +8,35 @@ import boto3
 from config import settings
 from utils.bedrock import CLASSIFICATION_ERROR, classify_image_base64, download_twilio_media, detect_image_format
 from utils.dynamo import (
+    approve_report,
     assign_workers_to_report,
     complete_and_verify_report,
+    complete_intake_location_step,
+    complete_intake_photo_step,
+    create_awaiting_location_report,
+    create_awaiting_photo_report,
+    expire_report,
+    find_active_intake_by_phone,
     find_assigned_report_for_worker,
     find_in_progress_report_for_worker,
     find_pending_report_by_phone,
     flag_report_classification_error,
     generate_and_save_coupon,
     get_active_reports,
+    get_all_warehouses,
     get_citizen_reward_count,
     get_free_workers,
+    get_report_by_id,
+    record_worker_arrival_step,
+    record_worker_finish_step,
+    reject_report,
     save_raw_pending_report,
+    set_report_pending_admin_review,
     set_report_worker_finished,
     set_report_worker_started,
     update_report_classification,
     update_report_location,
+    update_report_warehouse_details,
 )
 from utils.haversine import haversine
 from utils.twilio_outbound import send_whatsapp
@@ -34,11 +48,17 @@ _MOD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../mod
 if _MOD_DIR not in sys.path:
     sys.path.insert(0, os.path.join(_MOD_DIR, "truth-verification-engine"))
     sys.path.insert(0, os.path.join(_MOD_DIR, "reward-engine"))
+    sys.path.insert(0, os.path.join(_MOD_DIR, "recycling-categorizer"))
 
 try:
     from verifier import verify_work
 except ImportError:
     verify_work = None
+
+try:
+    from categorizer import categorize_for_recycling
+except ImportError:
+    categorize_for_recycling = None
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -102,16 +122,23 @@ def _inline_priority_score(fill_percent: int) -> float:
 # ---------------------------------------------------------------------------
 
 def handle_photo(msg: dict) -> str:
-    """Citizen photo intake: ACID save → S3 → Nova Lite → score → DB update."""
-    report_id = str(uuid.uuid4())
+    """Citizen photo intake (Order-Agnostic with 5-minute timeout):
+    - If Location arrived first (awaiting_photo): update photo, run AI, and trigger dispatch once both are present.
+    - If Photo arrives first (no prior location): create awaiting_location record, run AI, and ask for location.
+    - If prior intake timed out (>5 min): expire old record, alert citizen, and treat as new intake.
+    """
     timestamp = msg.get("timestamp") or datetime.now(timezone.utc).isoformat()
     citizen_phone = msg.get("sender_phone", "")
 
-    # ACID Step 1: Save raw pending report first (before any heavy work)
-    save_raw_pending_report(report_id, citizen_phone, timestamp)
-    logger.info(f"ACID Step 1: Saved pending report {report_id}")
+    # Check for active intake
+    active_report, is_timed_out = find_active_intake_by_phone(citizen_phone, timeout_seconds=300)
+    if is_timed_out and citizen_phone:
+        send_whatsapp(
+            citizen_phone,
+            "Your previous report timed out. Please send a photo and location again to start a new report.",
+        )
 
-    # ACID Step 2: Download image from Twilio or read from image_base64 → upload to S3
+    # Download & upload photo to S3
     media_url = msg.get("media_url", "")
     image_bytes = b""
     if msg.get("image_base64"):
@@ -122,15 +149,59 @@ def handle_photo(msg: dict) -> str:
     elif media_url:
         image_bytes = download_twilio_media(media_url)
 
-    photo_url = _upload_photo(image_bytes, f"before/{report_id}.jpg", media_url or "https://pingbin-images/before.jpg")
-
-    # ACID Step 3: Nova Lite classification
+    # Classify with Nova Lite
     image_b64 = base64.b64encode(image_bytes).decode("utf-8") if image_bytes else (msg.get("image_base64") or "")
     classification = classify_image_base64(image_b64)
 
-    # Classification failure or invalid image → flag and exit; no silent defaults
-    if "_error" in classification:
+    # Scenario A: Location was already provided (status == 'awaiting_photo')
+    if active_report and active_report.get("status") == "awaiting_photo":
+        report_id = active_report["report_id"]
+        photo_url = _upload_photo(image_bytes, f"before/{report_id}.jpg", media_url or "https://pingbin-images/before.jpg")
+
+        if "_error" in classification or not classification.get("is_valid_report", False):
+            logger.warning(f"Classification failed for report {report_id} — flagging needs_review")
+            flag_report_classification_error(report_id, "classification_error")
+            if citizen_phone:
+                send_whatsapp(
+                    citizen_phone,
+                    "We received your image but couldn't classify the waste clearly. "
+                    "Please resend a clearer photo of the waste or bin. Your report has been logged for review.",
+                )
+            return report_id
+
+        confidence = int(classification.get("confidence", 85))
+        suspicious_flag = bool(classification.get("suspicious_flag", False))
+        if confidence < 25 or suspicious_flag:
+            logger.info(f"Report {report_id} confidence={confidence}, suspicious={suspicious_flag} — routing to pending_admin_review")
+            set_report_pending_admin_review(
+                report_id=report_id,
+                photo_before_url=photo_url,
+                classification=classification,
+            )
+            if citizen_phone:
+                send_whatsapp(
+                    citizen_phone,
+                    "Thanks for reporting! We've received your report. It is currently being processed.",
+                )
+            return report_id
+
+        priority_score = _inline_priority_score(int(classification.get("fill_percent", 50)))
+        updated_report = complete_intake_photo_step(report_id, photo_url, classification, priority_score=priority_score)
+        logger.info(f"Order-agnostic: Both Photo & Location present for {report_id}, score={priority_score}. Dispatching...")
+
+        loc = updated_report.get("location_before") or {}
+        lat = float(loc.get("lat", 20.3533))
+        lng = float(loc.get("lng", 85.8197))
+        dispatch_workers(report_id, lat, lng, updated_report)
+        return report_id
+
+    # Scenario B: Fresh intake (Photo arrives first)
+    report_id = str(uuid.uuid4())
+    photo_url = _upload_photo(image_bytes, f"before/{report_id}.jpg", media_url or "https://pingbin-images/before.jpg")
+
+    if "_error" in classification or not classification.get("is_valid_report", False):
         logger.warning(f"Classification failed for report {report_id} — flagging needs_review")
+        save_raw_pending_report(report_id, citizen_phone, timestamp)
         flag_report_classification_error(report_id, "classification_error")
         if citizen_phone:
             send_whatsapp(
@@ -140,21 +211,25 @@ def handle_photo(msg: dict) -> str:
             )
         return report_id
 
-    # ACID Step 4: Inline priority score
-    priority_score = _inline_priority_score(int(classification["fill_percent"]))
+    confidence = int(classification.get("confidence", 85))
+    suspicious_flag = bool(classification.get("suspicious_flag", False))
 
-    # ACID Step 5: Update DynamoDB with classification + score
-    update_report_classification(
+    create_awaiting_location_report(
         report_id=report_id,
+        citizen_phone=citizen_phone,
         photo_before_url=photo_url,
-        waste_type=classification["waste_type"],
-        fill_percent=classification["fill_percent"],
-        urgency=classification["urgency"],
-        priority_score=priority_score,
-        estimated_workers_needed=classification["estimated_workers_needed"],
-        estimated_minutes_to_clean=classification["estimated_minutes_to_clean"],
+        classification=classification,
+        timestamp=timestamp,
     )
-    logger.info(f"ACID Step 5: Updated report {report_id} score={priority_score}")
+    logger.info(f"Order-agnostic: Saved photo-first report {report_id}, confidence={confidence}, suspicious={suspicious_flag}")
+
+    if confidence < 25 or suspicious_flag:
+        if citizen_phone:
+            send_whatsapp(
+                citizen_phone,
+                "Thanks for reporting! We've received your report. It is currently being processed.",
+            )
+        return report_id
 
     if citizen_phone:
         send_whatsapp(
@@ -165,24 +240,74 @@ def handle_photo(msg: dict) -> str:
 
 
 def handle_location(msg: dict) -> None:
-    """Citizen location share: correlate with pending report → run dispatch."""
+    """Citizen location share (Order-Agnostic with 5-minute timeout):
+    - If Photo arrived first (awaiting_location): save location, transition to pending, calculate score, and dispatch workers.
+    - If Location arrives first (no prior photo): create awaiting_photo record, prompt citizen to send a photo.
+    - If prior intake timed out (>5 min): expire old record, alert citizen, and treat as new intake.
+    """
     sender_phone = msg.get("sender_phone", "")
     lat = msg.get("latitude")
     lng = msg.get("longitude")
+    timestamp = msg.get("timestamp") or datetime.now(timezone.utc).isoformat()
 
     if lat is None or lng is None:
         return
 
-    pending_report = find_pending_report_by_phone(sender_phone, window_minutes=5)
-    if not pending_report:
-        logger.warning(f"No pending report found for {sender_phone} to correlate location.")
+    active_report, is_timed_out = find_active_intake_by_phone(sender_phone, timeout_seconds=300)
+    if is_timed_out and sender_phone:
+        send_whatsapp(
+            sender_phone,
+            "Your previous report timed out. Please send a photo and location again to start a new report.",
+        )
+
+    # Scenario A: Photo was already provided (status == 'awaiting_location' or 'pending_admin_review' or 'pending')
+    if active_report and active_report.get("status") in ["awaiting_location", "pending_admin_review", "pending"]:
+        report_id = active_report["report_id"]
+        is_gated = (
+            active_report.get("status") == "pending_admin_review"
+            or int(active_report.get("confidence", 100)) < 25
+            or active_report.get("suspicious_flag", False)
+        )
+
+        if is_gated:
+            update_report_location(report_id, lat, lng)
+            logger.info(f"Attached location to gated report {report_id} (pending_admin_review). Dispatch held.")
+            return
+
+        priority_score = _inline_priority_score(int(active_report.get("fill_percent", 50)))
+        updated_report = complete_intake_location_step(report_id, lat, lng, priority_score=priority_score)
+        logger.info(f"Order-agnostic: Both Photo & Location present for {report_id}, score={priority_score}. Dispatching...")
+
+        dispatch_workers(report_id, lat, lng, updated_report)
         return
 
-    report_id = pending_report["report_id"]
-    update_report_location(report_id, lat, lng)
-    logger.info(f"Correlated location ({lat},{lng}) with report {report_id}")
+    # Scenario B: Existing awaiting_photo report (user re-sent/updated location before photo)
+    if active_report and active_report.get("status") == "awaiting_photo":
+        report_id = active_report["report_id"]
+        update_report_location(report_id, lat, lng)
+        if sender_phone:
+            send_whatsapp(
+                sender_phone,
+                "Location updated! Please send a clear photo of the waste or overflowing dustbin to complete your report.",
+            )
+        return
 
-    dispatch_workers(report_id, lat, lng, pending_report)
+    # Scenario C: Fresh intake (Location arrives first)
+    report_id = str(uuid.uuid4())
+    create_awaiting_photo_report(
+        report_id=report_id,
+        citizen_phone=sender_phone,
+        lat=lat,
+        lng=lng,
+        timestamp=timestamp,
+    )
+    logger.info(f"Order-agnostic: Created location-first report {report_id} (awaiting_photo)")
+
+    if sender_phone:
+        send_whatsapp(
+            sender_phone,
+            "Location received! Please send a clear photo of the waste or overflowing dustbin to complete your report.",
+        )
 
 
 def dispatch_workers(report_id: str, rep_lat: float, rep_lng: float, report_data: dict) -> None:
@@ -486,6 +611,9 @@ def _run_verification(
         )
         logger.info(f"Report {report_id} resolved. Truth={truth_score}% Coupon={coupon_code}")
 
+        # --- Part 2: Warehouse Assignment & Recycling Revenue Pipeline ---
+        _process_warehouse_and_revenue(report_id, report, finish_photo_url, location_after)
+
     else:
         # ❌ Needs review — record which gate(s) failed and actual numbers
         failed_gates = []
@@ -514,6 +642,121 @@ def _run_verification(
             photo_after_url=finish_photo_url,
             location_after=location_after,
         )
+
+
+# ---------------------------------------------------------------------------
+# Warehouse & Recycling Revenue Calculation
+# ---------------------------------------------------------------------------
+
+_BASE_PRICING_TABLE = {
+    "plastic": 8.0,
+    "metal": 15.0,
+    "paper": 5.0,
+    "glass": 4.0,
+    "e_waste": 25.0,
+    "organic": 2.0,
+    "mixed": 3.0,
+    "hazardous": 0.0,
+}
+
+
+def _process_warehouse_and_revenue(
+    report_id: str,
+    report: dict,
+    finish_photo_url: str | None,
+    finish_location: dict | None,
+) -> dict:
+    """Run recycling material categorization, match nearest warehouse, and compute recycling revenue."""
+    try:
+        # Step 1: Call in-house recycling categorizer
+        cat_result = None
+        if finish_photo_url and categorize_for_recycling:
+            try:
+                img_bytes = download_twilio_media(finish_photo_url) if "http" in finish_photo_url else b""
+                cat_result = categorize_for_recycling(img_bytes)
+                logger.info(f"Recycling Categorizer Raw Result for {report_id}: {cat_result}")
+            except Exception as e:
+                logger.warning(f"Could not run recycling categorizer on photo: {e}")
+
+        if not cat_result:
+            fallback_type = report.get("waste_type", "mixed")
+            cat_result = {
+                "recycling_category": fallback_type,
+                "purity_score": 85,
+                "notes": "Classified from initial report waste stream.",
+            }
+
+        recycling_category = cat_result.get("recycling_category", "mixed").lower()
+        purity_score = int(cat_result.get("purity_score", 85))
+
+        # Step 2: Match warehouse by accepted_categories and proximity
+        warehouses = get_all_warehouses()
+        matching_warehouses = [
+            w for w in warehouses
+            if recycling_category in [c.lower() for c in w.get("accepted_categories", [])]
+        ]
+
+        rep_loc = finish_location or report.get("location_before") or {}
+        rep_lat = float(rep_loc["lat"]) if "lat" in rep_loc else None
+        rep_lng = float(rep_loc["lng"]) if "lng" in rep_loc else None
+
+        chosen_wh = None
+        if matching_warehouses and rep_lat is not None and rep_lng is not None:
+            wh_distances = []
+            for w in matching_warehouses:
+                loc = w.get("location", {})
+                w_lat = float(loc.get("lat", 0))
+                w_lng = float(loc.get("lng", 0))
+                dist = haversine(rep_lat, rep_lng, w_lat, w_lng)
+                wh_distances.append((w, dist))
+            wh_distances.sort(key=lambda x: x[1])
+            chosen_wh = wh_distances[0][0]
+        elif matching_warehouses:
+            chosen_wh = matching_warehouses[0]
+
+        if chosen_wh:
+            assigned_wid = chosen_wh.get("warehouse_id")
+            assigned_wname = chosen_wh.get("name")
+            wh_status = "pending_pickup"
+        else:
+            assigned_wid = None
+            assigned_wname = "Special Handling Facility"
+            wh_status = "special_handling_required"
+
+        # Step 3 & 4: Weight and revenue estimation
+        fill_pct = float(report.get("fill_percent", 50))
+        estimated_weight_kg = round(fill_pct * 0.5, 1)
+        base_price = _BASE_PRICING_TABLE.get(recycling_category, 3.0)
+        estimated_revenue = round(estimated_weight_kg * base_price * (purity_score / 100.0), 2)
+
+        # Step 5: Save to DynamoDB
+        update_report_warehouse_details(
+            report_id=report_id,
+            recycling_category=recycling_category,
+            purity_score=purity_score,
+            assigned_warehouse_id=assigned_wid,
+            assigned_warehouse_name=assigned_wname,
+            warehouse_status=wh_status,
+            estimated_weight_kg=estimated_weight_kg,
+            estimated_revenue=estimated_revenue,
+        )
+        logger.info(
+            f"Warehouse assigned for report {report_id}: {assigned_wname} ({wh_status}) "
+            f"category={recycling_category} purity={purity_score}% "
+            f"weight={estimated_weight_kg}kg rev=₹{estimated_revenue}"
+        )
+        return {
+            "recycling_category": recycling_category,
+            "purity_score": purity_score,
+            "assigned_warehouse_id": assigned_wid,
+            "assigned_warehouse_name": assigned_wname,
+            "warehouse_status": wh_status,
+            "estimated_weight_kg": estimated_weight_kg,
+            "estimated_revenue": estimated_revenue,
+        }
+    except Exception as e:
+        logger.error(f"Failed to process warehouse for report {report_id}: {e}")
+        return {}
 
 
 # ---------------------------------------------------------------------------
@@ -589,7 +832,9 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
 
     # --- Trigger 2: API Gateway ---
     http_method = event.get("httpMethod") or (event.get("requestContext", {}).get("http", {}).get("method"))
-    path = event.get("resource") or event.get("path") or (event.get("requestContext", {}).get("http", {}).get("path"))
+    path = event.get("path") or event.get("rawPath") or event.get("resource") or (event.get("requestContext", {}).get("http", {}).get("path")) or ""
+    path_params = event.get("pathParameters") or {}
+    param_report_id = path_params.get("id") or path_params.get("report_id")
 
     # Handle CORS Preflight OPTIONS
     if http_method == "OPTIONS":
@@ -611,6 +856,50 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
     # GET /reports
     if http_method == "GET" and path in ("/reports", "/reports/"):
         return ok(get_active_reports())
+
+    # POST /reports/{id}/reject
+    if http_method == "POST" and (path.endswith("/reject") or event.get("resource") == "/reports/{id}/reject"):
+        parts = [p for p in path.strip("/").split("/") if p]
+        report_id = param_report_id or (parts[1] if len(parts) >= 2 and parts[1] != "{id}" else None)
+        if report_id:
+            report = get_report_by_id(report_id)
+            success = reject_report(report_id)
+            if success:
+                citizen_phone = report.get("citizen_phone") if report else None
+                if citizen_phone and citizen_phone != "ADMIN":
+                    send_whatsapp(
+                        citizen_phone,
+                        "Our admin team reviewed your report and determined it was not a valid waste complaint. "
+                        "Please ensure accurate reporting to help us keep the city clean. Misuse of the reporting system may lead to blocked access.",
+                    )
+                return ok({"status": "rejected", "report_id": report_id, "timestamp": datetime.now(timezone.utc).isoformat()})
+        return err("Invalid report id or reject failed", 400)
+
+    # POST /reports/{id}/approve
+    if http_method == "POST" and (path.endswith("/approve") or event.get("resource") == "/reports/{id}/approve"):
+        parts = [p for p in path.strip("/").split("/") if p]
+        report_id = param_report_id or (parts[1] if len(parts) >= 2 and parts[1] != "{id}" else None)
+        if report_id:
+            report = get_report_by_id(report_id)
+            if not report:
+                return err(f"Report {report_id} not found", 404)
+            fill_pct = int(report.get("fill_percent", 50))
+            priority_score = _inline_priority_score(fill_pct)
+            approve_report(report_id, priority_score)
+            rep_loc = report.get("location_before") or {}
+            if rep_loc and "lat" in rep_loc and "lng" in rep_loc:
+                dispatch_workers(report_id, float(rep_loc["lat"]), float(rep_loc["lng"]), report)
+            elif report.get("citizen_phone") and report.get("citizen_phone") != "ADMIN":
+                send_whatsapp(
+                    report["citizen_phone"],
+                    "Your report has been approved! Please share your location in WhatsApp so we can dispatch workers.",
+                )
+            return ok({"status": "approved", "report_id": report_id, "priority_score": priority_score})
+        return err("Invalid report id", 400)
+
+    # GET /warehouses
+    if http_method == "GET" and path in ("/warehouses", "/warehouses/"):
+        return ok(get_all_warehouses())
 
     # GET /workers
     if http_method == "GET" and path in ("/workers", "/workers/"):

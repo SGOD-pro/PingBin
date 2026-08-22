@@ -248,6 +248,37 @@ def list_vendors():
     return [_serialize(v) for v in get_all_vendors()]
 
 
+@app.post("/reports/{report_id}/reject")
+def reject_report_endpoint(report_id: str):
+    """Reject a low-confidence report from admin queue."""
+    event = {
+        "resource": "/reports/{id}/reject",
+        "path": f"/reports/{report_id}/reject",
+        "httpMethod": "POST",
+    }
+    res = processor.lambda_handler(event)
+    return Response(content=res.get("body", "{}"), status_code=res.get("statusCode", 200), media_type="application/json")
+
+
+@app.post("/reports/{report_id}/approve")
+def approve_report_endpoint(report_id: str):
+    """Approve a low-confidence report and trigger worker dispatch."""
+    event = {
+        "resource": "/reports/{id}/approve",
+        "path": f"/reports/{report_id}/approve",
+        "httpMethod": "POST",
+    }
+    res = processor.lambda_handler(event)
+    return Response(content=res.get("body", "{}"), status_code=res.get("statusCode", 200), media_type="application/json")
+
+
+@app.get("/warehouses")
+def list_warehouses():
+    """Return all recycling warehouses for the admin dashboard."""
+    from utils.dynamo import get_all_warehouses
+    return [_serialize(w) for w in get_all_warehouses()]
+
+
 @app.get("/coupons")
 def list_coupons():
     """Return all issued coupons for the admin dashboard."""

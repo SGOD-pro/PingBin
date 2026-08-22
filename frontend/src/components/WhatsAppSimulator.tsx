@@ -14,7 +14,11 @@ import {
   Cpu,
   Navigation,
   Award,
+  AlertTriangle,
+  ShieldAlert,
+  Layers,
 } from 'lucide-react';
+import { getApiUrl } from '../lib/api';
 
 interface ChatMessage {
   id: string;
@@ -34,7 +38,15 @@ interface ChatMessage {
   status?: 'sent' | 'delivered' | 'read';
 }
 
+export type DemoScenario =
+  | 'happy_path'
+  | 'fake_work_gate'
+  | 'safety_gate_suspicious'
+  | 'order_agnostic_loc_first';
+
 export function WhatsAppSimulator() {
+  const API_URL = getApiUrl();
+  const [scenario, setScenario] = useState<DemoScenario>('happy_path');
   const [isSimulating, setIsSimulating] = useState(false);
   const [currentStep, setCurrentStep] = useState<number>(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
@@ -89,6 +101,15 @@ export function WhatsAppSimulator() {
     timeoutsRef.current.push(timer);
   };
 
+  // Helper to trigger background backend sync (bypassing Twilio SMS network)
+  const syncBackend = (payload: Record<string, any>) => {
+    fetch(`${API_URL}/dev/simulate-message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((err) => console.warn('Backend sync notice:', err));
+  };
+
   const runSimulation = () => {
     resetSimulation();
     setIsSimulating(true);
@@ -100,196 +121,463 @@ export function WhatsAppSimulator() {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
-    // ── STEP 1 (0s): Citizen reports overflowing bin photo + GPS pin ────────
-    scheduleStep(() => {
-      setCurrentStep(1);
-      setCitizenMessages([
-        {
-          id: 'c1',
-          sender: 'user',
-          type: 'image',
-          imageUrl: 'https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=600&q=80',
-          text: 'Severely overflowing dumpster blocking the road near KIIT Square!',
-          time: formatTime(0),
-          status: 'read',
-        },
-        {
-          id: 'c2',
-          sender: 'user',
-          type: 'location',
-          location: {
-            name: 'KIIT Square, Patia, Bhubaneswar',
-            lat: 20.3533,
-            lng: 85.8197,
+    // =========================================================================
+    // SCENARIO 1: HAPPY PATH — Standard High-Confidence Resolution & Reward
+    // =========================================================================
+    if (scenario === 'happy_path') {
+      const citizenPhone = '+919084686979';
+
+      // Step 1: Citizen sends photo + GPS location
+      scheduleStep(() => {
+        setCurrentStep(1);
+        setCitizenMessages([
+          {
+            id: 'c1',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg',
+            text: 'Severely overflowing dumpster blocking the road near KIIT Square!',
+            time: formatTime(0),
+            status: 'read',
           },
-          time: formatTime(1),
-          status: 'read',
-        },
-      ]);
-    }, 400);
-
-    // ── STEP 2 (2s): System acknowledges in Citizen chat ───────────────────
-    scheduleStep(() => {
-      setCurrentStep(2);
-      setCitizenMessages((prev) => [
-        ...prev,
-        {
-          id: 'c3',
-          sender: 'system',
-          type: 'text',
-          text: '🤖 PingBin AI: Report received. Analyzing image with AWS Bedrock Nova Lite multimodal vision triage...',
-          time: formatTime(2),
-        },
-      ]);
-    }, 2200);
-
-    // ── STEP 3 (4s): Dispatch to Worker A & Notify Citizen ─────────────────
-    scheduleStep(() => {
-      setCurrentStep(3);
-      setCitizenMessages((prev) => [
-        ...prev,
-        {
-          id: 'c4',
-          sender: 'system',
-          type: 'text',
-          text: '✅ Triage Complete (Priority: 89/100 • Mixed Waste • 85% Fill). Worker A (+91 92634 05367) has been dispatched to your location. Estimated cleanup: 30 mins.',
-          time: formatTime(4),
-        },
-      ]);
-
-      setWorkerMessages([
-        {
-          id: 'w1',
-          sender: 'system',
-          type: 'text',
-          text: '🚨 PINGBIN DISPATCH ALERT 🚨\n\nIncident: #rep-patia-01\nType: MIXED Waste | Fill: 85% (High Urgency)\nPriority Score: 89/100\nEst. Time: 30 min\nLocation: KIIT Square, Patia\n\nSend a PHOTO + LOCATION when you arrive to start timer.',
-          time: formatTime(4),
-        },
-        {
-          id: 'w2',
-          sender: 'system',
-          type: 'location',
-          location: {
-            name: 'Incident Site: KIIT Square, Patia',
-            lat: 20.3533,
-            lng: 85.8197,
+          {
+            id: 'c2',
+            sender: 'user',
+            type: 'location',
+            location: {
+              name: 'KIIT Square, Patia, Bhubaneswar',
+              lat: 20.3533,
+              lng: 85.8197,
+            },
+            time: formatTime(1),
+            status: 'read',
           },
-          time: formatTime(4),
-        },
-      ]);
-    }, 4500);
+        ]);
+        syncBackend({
+          sender_phone: citizenPhone,
+          message_type: 'photo',
+          media_url: 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg',
+          latitude: 20.3533,
+          longitude: 85.8197,
+        });
+      }, 400);
 
-    // ── STEP 4 (7s): Worker Arrives at Site ─────────────────────────────────
-    scheduleStep(() => {
-      setCurrentStep(4);
-      setWorkerMessages((prev) => [
-        ...prev,
-        {
-          id: 'w3',
-          sender: 'user',
-          type: 'image',
-          imageUrl: 'https://images.unsplash.com/photo-1528323273322-d81458248d40?auto=format&fit=crop&w=600&q=80',
-          text: 'On-site at KIIT Square. Beginning clearance now.',
-          time: formatTime(7),
-          status: 'read',
-        },
-        {
-          id: 'w4',
-          sender: 'user',
-          type: 'location',
-          location: {
-            name: 'Worker Arrival GPS (Distance: 12m from site)',
-            lat: 20.3534,
-            lng: 85.8198,
+      // Step 2: System acknowledges in Citizen chat
+      scheduleStep(() => {
+        setCurrentStep(2);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c3',
+            sender: 'system',
+            type: 'text',
+            text: '🤖 PingBin AI: Report received. Analyzing image with AWS Bedrock Nova Lite multimodal vision triage...',
+            time: formatTime(2),
           },
-          time: formatTime(7),
-          status: 'read',
-        },
-        {
-          id: 'w5',
-          sender: 'system',
-          type: 'text',
-          text: '📍 Arrival verified (GPS <= 50m). Clean-up timer started. When finished, send cleanup photo + location.',
-          time: formatTime(8),
-        },
-      ]);
+        ]);
+      }, 2000);
 
-      setCitizenMessages((prev) => [
-        ...prev,
-        {
-          id: 'c5',
-          sender: 'system',
-          type: 'text',
-          text: '👷 Worker A has arrived on-site and initiated cleanup operations.',
-          time: formatTime(8),
-        },
-      ]);
-    }, 7200);
-
-    // ── STEP 5 (10.5s): Worker Completes Work (After Photo + DONE) ─────────
-    scheduleStep(() => {
-      setCurrentStep(5);
-      setWorkerMessages((prev) => [
-        ...prev,
-        {
-          id: 'w6',
-          sender: 'user',
-          type: 'image',
-          imageUrl: 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?auto=format&fit=crop&w=600&q=80',
-          text: 'Cleaned up and sanitized entire zone. DONE.',
-          time: formatTime(11),
-          status: 'read',
-        },
-        {
-          id: 'w7',
-          sender: 'user',
-          type: 'location',
-          location: {
-            name: 'Worker Finish GPS (Distance: 8m)',
-            lat: 20.3533,
-            lng: 85.8197,
+      // Step 3: Dispatch to Worker & Notify Citizen
+      scheduleStep(() => {
+        setCurrentStep(3);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c4',
+            sender: 'system',
+            type: 'text',
+            text: '✅ Triage Complete (Priority: 89/100 • Mixed Waste • 85% Fill). Worker 1 (+91 93821 22857) dispatched. Estimated cleanup: 35 mins.',
+            time: formatTime(4),
           },
-          time: formatTime(11),
-          status: 'read',
-        },
-      ]);
-      setIsVerifying(true);
-    }, 10800);
+        ]);
 
-    // ── STEP 6 (13.5s): Two-Gate Verification Passed & Citizen Reward ──────
-    scheduleStep(() => {
-      setIsVerifying(false);
-      setCurrentStep(6);
-
-      setWorkerMessages((prev) => [
-        ...prev,
-        {
-          id: 'w8',
-          sender: 'system',
-          type: 'text',
-          text: '✅ TWO-GATE AUDIT PASSED!\n• Gate A (GPS): 8.2m <= 50m limit\n• Gate B (Truth Score): 92% >= 50% threshold\n\nJob resolved! You are now AVAILABLE for new assignments.',
-          time: formatTime(14),
-        },
-      ]);
-
-      setCitizenMessages((prev) => [
-        ...prev,
-        {
-          id: 'c6',
-          sender: 'system',
-          type: 'reward',
-          reward: {
-            code: 'CL-PUR-8X4P-50',
-            vendor: 'Puri Sweets & Bakery (Patia / KIIT)',
-            category: 'Bakery & Cafe',
-            offer: 'Flat ₹50 OFF on orders above ₹199',
-            howToUse: 'Valid for 30 days. Present WhatsApp coupon code at billing counter.',
+        setWorkerMessages([
+          {
+            id: 'w1',
+            sender: 'system',
+            type: 'text',
+            text: '🚨 PINGBIN DISPATCH ALERT 🚨\n\nIncident: #rep-patia-01\nType: MIXED Waste | Fill: 85% (High Urgency)\nPriority Score: 89/100\nEst. Time: 35 min\nLocation: KIIT Square, Patia\n\nSend a PHOTO + LOCATION when you arrive to start timer.',
+            time: formatTime(4),
           },
-          time: formatTime(14),
-        },
-      ]);
-      setIsSimulating(false);
-    }, 14000);
+          {
+            id: 'w2',
+            sender: 'system',
+            type: 'location',
+            location: {
+              name: 'Incident Site: KIIT Square, Patia',
+              lat: 20.3533,
+              lng: 85.8197,
+            },
+            time: formatTime(4),
+          },
+        ]);
+      }, 4200);
+
+      // Step 4: Worker Arrives at Site (Arrival GPS <= 50m)
+      scheduleStep(() => {
+        setCurrentStep(4);
+        setWorkerMessages((prev) => [
+          ...prev,
+          {
+            id: 'w3',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg',
+            text: 'On-site at KIIT Square. Beginning clearance now.',
+            time: formatTime(7),
+            status: 'read',
+          },
+          {
+            id: 'w4',
+            sender: 'user',
+            type: 'location',
+            location: {
+              name: 'Worker Arrival GPS (Distance: 12m from site)',
+              lat: 20.3534,
+              lng: 85.8198,
+            },
+            time: formatTime(7),
+            status: 'read',
+          },
+          {
+            id: 'w5',
+            sender: 'system',
+            type: 'text',
+            text: '📍 Arrival verified (GPS <= 50m). Clean-up timer started. When finished, send cleanup photo + location.',
+            time: formatTime(8),
+          },
+        ]);
+
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c5',
+            sender: 'system',
+            type: 'text',
+            text: '👷 Worker 1 has arrived on-site and initiated cleanup operations.',
+            time: formatTime(8),
+          },
+        ]);
+      }, 7000);
+
+      // Step 5: Worker Completes Work (After Photo + Finish GPS)
+      scheduleStep(() => {
+        setCurrentStep(5);
+        setWorkerMessages((prev) => [
+          ...prev,
+          {
+            id: 'w6',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/new-delhi-india-may-8-260nw-1974738929.webp',
+            text: 'Cleaned up and sanitized entire zone. DONE.',
+            time: formatTime(11),
+            status: 'read',
+          },
+          {
+            id: 'w7',
+            sender: 'user',
+            type: 'location',
+            location: {
+              name: 'Worker Finish GPS (Distance: 8m)',
+              lat: 20.3533,
+              lng: 85.8197,
+            },
+            time: formatTime(11),
+            status: 'read',
+          },
+        ]);
+        setIsVerifying(true);
+      }, 10500);
+
+      // Step 6: Two-Gate Verification Passed & Citizen Reward Issued
+      scheduleStep(() => {
+        setIsVerifying(false);
+        setCurrentStep(6);
+
+        setWorkerMessages((prev) => [
+          ...prev,
+          {
+            id: 'w8',
+            sender: 'system',
+            type: 'text',
+            text: '✅ TWO-GATE AUDIT PASSED!\n• Gate A (GPS): 8.2m <= 50m limit\n• Gate B (Truth Score): 92% >= 50% threshold\n\nJob resolved! 35kg biomass routed to Patia MRF (Valuation: ₹252.00). You are now FREE for new assignments.',
+            time: formatTime(14),
+          },
+        ]);
+
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c6',
+            sender: 'system',
+            type: 'reward',
+            reward: {
+              code: 'CL-PUR-8X4P-50',
+              vendor: 'Puri Sweets & Bakery (Patia / KIIT)',
+              category: 'Bakery & Cafe',
+              offer: 'Flat ₹50 OFF on orders above ₹199',
+              howToUse: 'Valid for 30 days. Present WhatsApp coupon code at billing counter.',
+            },
+            time: formatTime(14),
+          },
+        ]);
+        setIsSimulating(false);
+      }, 13800);
+    }
+
+    // =========================================================================
+    // SCENARIO 2: TRUTH ENGINE — Worker Fake-Work & Time Anomaly Gating
+    // =========================================================================
+    else if (scenario === 'fake_work_gate') {
+      scheduleStep(() => {
+        setCurrentStep(1);
+        setCitizenMessages([
+          {
+            id: 'c1',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg',
+            text: 'Massive garbage pile near Infocity gate!',
+            time: formatTime(0),
+            status: 'read',
+          },
+          {
+            id: 'c2',
+            sender: 'user',
+            type: 'location',
+            location: {
+              name: 'Infocity Ave, Patia, Bhubaneswar',
+              lat: 20.358,
+              lng: 85.815,
+            },
+            time: formatTime(1),
+            status: 'read',
+          },
+        ]);
+      }, 400);
+
+      scheduleStep(() => {
+        setCurrentStep(2);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c3',
+            sender: 'system',
+            type: 'text',
+            text: '✅ Triage Complete (Priority: 91/100 • Estimated Cleanup: 45 mins). Worker 2 dispatched.',
+            time: formatTime(2),
+          },
+        ]);
+
+        setWorkerMessages([
+          {
+            id: 'w1',
+            sender: 'system',
+            type: 'text',
+            text: '🚨 PINGBIN DISPATCH ALERT 🚨\n\nIncident: #rep-infocity-02\nEstimated Cleanup: 45 min\nLocation: Infocity Ave, Patia\n\nSend PHOTO + LOCATION when you arrive.',
+            time: formatTime(2),
+          },
+        ]);
+      }, 2500);
+
+      // Worker attempts fake completion in 12 seconds from 450 meters away!
+      scheduleStep(() => {
+        setCurrentStep(4);
+        setWorkerMessages((prev) => [
+          ...prev,
+          {
+            id: 'w2',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/new-delhi-india-may-8-260nw-1974738929.webp',
+            text: 'Done cleanup already! Send coupon.',
+            time: formatTime(5),
+            status: 'read',
+          },
+          {
+            id: 'w3',
+            sender: 'user',
+            type: 'location',
+            location: {
+              name: 'Worker Device GPS (450m Distance Anomaly)',
+              lat: 20.354,
+              lng: 85.811,
+            },
+            time: formatTime(5),
+            status: 'read',
+          },
+        ]);
+        setIsVerifying(true);
+      }, 5500);
+
+      // Audit Engine catches fake work!
+      scheduleStep(() => {
+        setIsVerifying(false);
+        setCurrentStep(6);
+
+        setWorkerMessages((prev) => [
+          ...prev,
+          {
+            id: 'w4',
+            sender: 'system',
+            type: 'text',
+            text: '⚠️ TWO-GATE VERIFICATION FAILED!\n❌ Gate A: Distance 450m > 50m radius limit\n❌ Gate B: Actual duration 0.2m vs 45.0m estimated (Truth Score: 0% < 50%)\n\nAudit flagged! Report routed to Supervisor Review Queue. Citizen reward withheld.',
+            time: formatTime(8),
+          },
+        ]);
+
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c4',
+            sender: 'system',
+            type: 'text',
+            text: '🛡️ Quality Assurance Notice: Worker proof is undergoing supervisor audit verification to guarantee clean streets.',
+            time: formatTime(8),
+          },
+        ]);
+        setIsSimulating(false);
+      }, 8500);
+    }
+
+    // =========================================================================
+    // SCENARIO 3: SAFETY GATE — Suspicious / Synthetic Photo & Admin Reject
+    // =========================================================================
+    else if (scenario === 'safety_gate_suspicious') {
+      scheduleStep(() => {
+        setCurrentStep(1);
+        setCitizenMessages([
+          {
+            id: 'c1',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg',
+            text: 'Here is a photo of the waste.',
+            time: formatTime(0),
+            status: 'read',
+          },
+        ]);
+      }, 400);
+
+      scheduleStep(() => {
+        setCurrentStep(2);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c2',
+            sender: 'system',
+            type: 'text',
+            text: '🤖 PingBin AI: Thanks for reporting! We\'ve received your report. It is currently being processed.',
+            time: formatTime(2),
+          },
+        ]);
+      }, 2200);
+
+      // Safety Gate halts dispatch in Command Center
+      scheduleStep(() => {
+        setCurrentStep(3);
+        setWorkerMessages([
+          {
+            id: 'w1',
+            sender: 'system',
+            type: 'text',
+            text: '🛡️ DISPATCH HOLD: Ticket #rep-suspicious-001 gated by Bedrock Nova Lite safety gate (Confidence: 14% < 25% • Suspicious Flag: True). Awaiting admin determination.',
+            time: formatTime(4),
+          },
+        ]);
+      }, 4500);
+
+      // Admin rejects fake report -> Warning sent to citizen
+      scheduleStep(() => {
+        setCurrentStep(6);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c3',
+            sender: 'system',
+            type: 'text',
+            text: '⚠️ Our admin team reviewed your report and determined it was not a valid waste complaint. Please ensure accurate reporting to help us keep the city clean. Misuse of the reporting system may lead to blocked access.',
+            time: formatTime(7),
+          },
+        ]);
+        setIsSimulating(false);
+      }, 7500);
+    }
+
+    // =========================================================================
+    // SCENARIO 4: ORDER-AGNOSTIC — Location Sent First, Photo Sent Second
+    // =========================================================================
+    else if (scenario === 'order_agnostic_loc_first') {
+      // Step 1: Citizen sends location PIN first
+      scheduleStep(() => {
+        setCurrentStep(1);
+        setCitizenMessages([
+          {
+            id: 'c1',
+            sender: 'user',
+            type: 'location',
+            location: {
+              name: 'Chandaka Industrial Area, Bhubaneswar',
+              lat: 20.37,
+              lng: 85.805,
+            },
+            time: formatTime(0),
+            status: 'read',
+          },
+          {
+            id: 'c2',
+            sender: 'system',
+            type: 'text',
+            text: '📍 Location received! Please send a clear photo of the waste or overflowing dustbin to complete your report.',
+            time: formatTime(1),
+          },
+        ]);
+      }, 400);
+
+      // Step 2: Citizen sends photo 3 seconds later
+      scheduleStep(() => {
+        setCurrentStep(2);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c3',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg',
+            text: 'Here is the photo of the industrial dump.',
+            time: formatTime(3),
+            status: 'read',
+          },
+        ]);
+      }, 3000);
+
+      // Step 3: Both present -> Nova Lite triages & triggers worker dispatch
+      scheduleStep(() => {
+        setCurrentStep(3);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c4',
+            sender: 'system',
+            type: 'text',
+            text: '✅ Correlation Complete! Bedrock Nova Lite triaged report (Priority: 78.5/100 • Organic/Cardboard). Worker 3 dispatched to Chandaka.',
+            time: formatTime(5),
+          },
+        ]);
+
+        setWorkerMessages([
+          {
+            id: 'w1',
+            sender: 'system',
+            type: 'text',
+            text: '🚨 PINGBIN DISPATCH ALERT 🚨\n\nIncident: #rep-chandaka-03\nType: Organic & Paper (80% Full)\nLocation: Chandaka Industrial Area\n\nSend PHOTO + LOCATION on arrival.',
+            time: formatTime(5),
+          },
+        ]);
+        setIsSimulating(false);
+      }, 5500);
+    }
   };
 
   return (
@@ -307,14 +595,14 @@ export function WhatsAppSimulator() {
                 LIVE DEMO SIMULATOR
               </span>
               <span className="text-[10px] font-mono text-[#0a3a40] font-bold uppercase tracking-wider hidden sm:inline">
-                GUARANTEED DEMO: WATCH THE FULLY AUTOMATED PINGBIN PIPELINE EXECUTE END-TO-END
+                PITCH SCENARIO ORCHESTRATOR
               </span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-display font-bold text-[#0a0a0a] tracking-tight">
               Real-Time WhatsApp Citizen &amp; Worker Orchestrator
             </h1>
             <p className="text-sm text-[#4a4a4a] leading-relaxed">
-              Experience the dual-sided real-time telemetry workflow: Citizen WhatsApp intake ➔ Bedrock Nova Lite AI triage ➔ Haversine automated dispatch ➔ Two-Gate anti-fake-work verification ➔ Hyperlocal reward delivery.
+              Experience the live dual-device WhatsApp workflow: citizen photo intake, Bedrock Nova Lite triage, Haversine dispatch, 2-gate anti-fake-work verification, and instant hyperlocal reward delivery.
             </p>
           </div>
 
@@ -359,27 +647,103 @@ export function WhatsAppSimulator() {
               {isSimulating ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
-                  <span>Executing Pipeline ({currentStep}/6)...</span>
+                  <span>Executing ({currentStep}/6)...</span>
                 </>
               ) : (
                 <>
                   <Play className="w-3.5 h-3.5 fill-current text-[#a4d4c5] shrink-0" />
-                  <span>Start Live Demo</span>
+                  <span>Run Selected Scenario</span>
                 </>
               )}
             </button>
           </div>
         </div>
 
+        {/* ── Scenario Selection Cards (Judge Pitch Demos) ────────────────── */}
+        <div className="mt-6 pt-5 border-t border-[#e5e5e5]/80">
+          <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#6a6a6a] block mb-3">
+            Select Pitch Demonstration Test Case:
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              {
+                id: 'happy_path' as DemoScenario,
+                title: '1. Standard Resolution & Reward',
+                desc: 'Photo + GPS ➔ Nova Lite Triage ➔ Dispatch ➔ 92% Truth Score ➔ Coupon issued + MRF revenue.',
+                icon: Award,
+                tag: 'Happy Path',
+                color: 'border-[#22c55e] text-[#166534]',
+              },
+              {
+                id: 'fake_work_gate' as DemoScenario,
+                title: '2. Truth Engine: Fake-Work Gate',
+                desc: 'Worker claims 12s cleanup from 450m away ➔ Gate A & B fail ➔ Routed to Audit Queue.',
+                icon: AlertTriangle,
+                tag: 'Anti-Fake Work',
+                color: 'border-[#ef4444] text-[#991b1b]',
+              },
+              {
+                id: 'safety_gate_suspicious' as DemoScenario,
+                title: '3. Safety Gate: Fake/Low-Conf Photo',
+                desc: 'Ambiguous image < 25% conf ➔ Held in Admin Review ➔ Admin Rejects ➔ Citizen warned.',
+                icon: ShieldAlert,
+                tag: 'Safety Gate',
+                color: 'border-[#f59e0b] text-[#92400e]',
+              },
+              {
+                id: 'order_agnostic_loc_first' as DemoScenario,
+                title: '4. Order-Agnostic: Location First',
+                desc: 'Citizen sends GPS pin first ➔ System waits ➔ Photo sent second ➔ Correlation & dispatch.',
+                icon: Layers,
+                tag: 'Edge Case',
+                color: 'border-[#0a3a40] text-[#0a3a40]',
+              },
+            ].map((sc) => {
+              const isSelected = scenario === sc.id;
+              const Icon = sc.icon;
+              return (
+                <button
+                  key={sc.id}
+                  onClick={() => {
+                    if (!isSimulating) {
+                      setScenario(sc.id);
+                      resetSimulation();
+                    }
+                  }}
+                  disabled={isSimulating}
+                  className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-white border-2 border-[#0a3a40] shadow-md ring-2 ring-[#0a3a40]/20'
+                      : 'bg-white/70 hover:bg-white border-[#e5e5e5] hover:border-[#cbd5e1]'
+                  } disabled:opacity-50`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md bg-gray-100 ${sc.color}`}>
+                      {sc.tag}
+                    </span>
+                    <Icon className={`w-4 h-4 ${isSelected ? 'text-[#0a3a40]' : 'text-gray-400'}`} />
+                  </div>
+                  <h4 className="font-display font-bold text-xs text-[#0a0a0a] leading-tight mb-1">
+                    {sc.title}
+                  </h4>
+                  <p className="text-[11px] text-[#6a6a6a] leading-snug">
+                    {sc.desc}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Live Step Progress Indicator */}
-        <div className="mt-6 pt-5 border-t border-[#e5e5e5]/80 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="mt-5 pt-4 border-t border-[#e5e5e5]/80 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {[
-            { step: 1, label: '1. Citizen Intake', sub: 'Photo + GPS' },
+            { step: 1, label: '1. Citizen Intake', sub: 'Photo / Location' },
             { step: 2, label: '2. Bedrock Triage', sub: 'Vision Multimodal' },
-            { step: 3, label: '3. Auto-Dispatch', sub: 'Haversine Nearest' },
-            { step: 4, label: '4. Worker Arrival', sub: 'GPS <= 50m' },
-            { step: 5, label: '5. Cleanup Finish', sub: 'Proof Upload' },
-            { step: 6, label: '6. 2-Gate Audit', sub: 'Coupon Reward' },
+            { step: 3, label: '3. Gate Check / Dispatch', sub: 'Safety Gate & Haversine' },
+            { step: 4, label: '4. Field Worker Ops', sub: 'On-Site Tracking' },
+            { step: 5, label: '5. Proof Upload', sub: 'Completion Telemetry' },
+            { step: 6, label: '6. 2-Gate Determination', sub: 'Audit / Rewards / MRF' },
           ].map((item) => {
             const isCompleted = currentStep > item.step;
             const isCurrent = currentStep === item.step;

@@ -1,24 +1,29 @@
 import React, { useState } from 'react';
 import type { ReportItem } from '../types';
-import { Flame, UserCheck, Search, Filter } from 'lucide-react';
+import { Flame, UserCheck, Search, Filter, ShieldAlert, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { getApiUrl } from '../lib/api';
 
 interface PriorityQueueProps {
   reports: ReportItem[];
   selectedReport: ReportItem | null;
   onSelectReport: (report: ReportItem) => void;
+  onRefresh?: () => void;
 }
 
 export const PriorityQueue: React.FC<PriorityQueueProps> = ({
   reports,
   selectedReport,
   onSelectReport,
+  onRefresh,
 }) => {
+  const API_URL = getApiUrl();
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  // Active tickets (pending, assigned, in_progress)
+  // Active tickets (pending, assigned, in_progress, pending_admin_review)
   const queueReports = reports.filter((r) =>
-    ['pending', 'assigned', 'in_progress'].includes(r.status)
+    ['pending', 'assigned', 'in_progress', 'pending_admin_review'].includes(r.status)
   );
 
   const filteredReports = queueReports.filter((r) => {
@@ -32,6 +37,35 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
     }
     return true;
   });
+
+  const handleReject = async (e: React.MouseEvent, reportId: string) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to reject this low-confidence report?')) return;
+    try {
+      setActionLoadingId(reportId);
+      const res = await fetch(`${API_URL}/reports/${reportId}/reject`, { method: 'POST' });
+      if (!res.ok) throw new Error('Reject failed');
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      alert(`Failed to reject report: ${err}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleApprove = async (e: React.MouseEvent, reportId: string) => {
+    e.stopPropagation();
+    try {
+      setActionLoadingId(reportId);
+      const res = await fetch(`${API_URL}/reports/${reportId}/approve`, { method: 'POST' });
+      if (!res.ok) throw new Error('Approve failed');
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      alert(`Failed to approve & dispatch report: ${err}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   return (
     <div className="bg-[#faf5e8] rounded-3xl border border-[#e5e5e5] shadow-sm overflow-hidden flex flex-col transition-all">
@@ -51,7 +85,7 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
               </span>
             </div>
             <p className="text-xs text-[#6a6a6a]">
-              Ranked by Bedrock Nova Lite 5-line inline scoring
+              Ranked by Bedrock Nova Lite scoring &amp; safety gate audit
             </p>
           </div>
         </div>
@@ -60,17 +94,23 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
         <div className="flex items-center gap-2.5">
           {/* Quick status filter pills */}
           <div className="flex items-center bg-white rounded-xl p-1 border border-[#e5e5e5] text-xs shadow-xs">
-            {['all', 'pending', 'assigned', 'in_progress'].map((st) => (
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'pending_admin_review', label: 'Safety Gate' },
+              { id: 'pending', label: 'Pending' },
+              { id: 'assigned', label: 'Assigned' },
+              { id: 'in_progress', label: 'Active' },
+            ].map((st) => (
               <button
-                key={st}
-                onClick={() => setFilterType(st)}
+                key={st.id}
+                onClick={() => setFilterType(st.id)}
                 className={`px-3 py-1 rounded-lg font-bold transition-all capitalize whitespace-nowrap cursor-pointer ${
-                  filterType === st
+                  filterType === st.id
                     ? 'bg-[#0a0a0a] text-white shadow-xs'
                     : 'text-[#6a6a6a] hover:text-[#0a0a0a]'
                 }`}
               >
-                {st === 'all' ? 'All' : st === 'in_progress' ? 'Active' : st}
+                {st.label}
               </button>
             ))}
           </div>
@@ -93,10 +133,10 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
         <table className="w-full text-left text-xs">
           <thead className="bg-[#f5f0e0] text-[#0a0a0a]/80 uppercase text-[10px] font-mono font-bold tracking-wider sticky top-0 z-10 border-b border-[#e5e5e5]">
             <tr>
-              <th className="py-3 px-5">Score</th>
+              <th className="py-3 px-5">Score / Gate</th>
               <th className="py-3 px-4">Type &amp; Urgency</th>
               <th className="py-3 px-4">Fill Level</th>
-              <th className="py-3 px-4">Status</th>
+              <th className="py-3 px-4">Status &amp; Actions</th>
               <th className="py-3 px-4">Assigned Worker</th>
               <th className="py-3 px-5 text-right">Age</th>
             </tr>
@@ -112,6 +152,7 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
             ) : (
               filteredReports.map((r, idx) => {
                 const isSelected = selectedReport?.report_id === r.report_id;
+                const isPendingReview = r.status === 'pending_admin_review';
                 const score = Math.round(r.priority_score || 0);
 
                 let scoreBadge = 'bg-[#a4d4c5] text-[#0a3a2a] font-bold'; // brand-mint
@@ -128,6 +169,8 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
                   statusBadge = 'bg-[#fff2eb] text-[#8f3e09] border border-[#ffb084]/50';
                 if (r.status === 'in_progress')
                   statusBadge = 'bg-[#edf7f4] text-[#0a3a2a] border border-[#a4d4c5]';
+                if (r.status === 'pending_admin_review')
+                  statusBadge = 'bg-[#fffbeb] text-[#b45309] border border-[#f59e0b]/50';
 
                 // Age calculation
                 let ageStr = 'recent';
@@ -145,15 +188,31 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
                     className={`cursor-pointer transition-all ${
                       isSelected
                         ? 'bg-[#faf5e8] border-l-4 border-l-[#0a0a0a] shadow-inner font-medium'
+                        : isPendingReview
+                        ? 'bg-[#fffdf7] hover:bg-[#fff9ea]'
                         : 'hover:bg-[#faf5e8]/80'
                     }`}
                   >
                     <td className="py-3.5 px-5">
-                      <span
-                        className={`inline-flex items-center justify-center px-2.5 py-1 rounded-lg font-mono text-xs shadow-xs ${scoreBadge}`}
-                      >
-                        {r.priority_score ? Number(r.priority_score).toFixed(1) : '0.0'}
-                      </span>
+                      {isPendingReview ? (
+                        r.suspicious_flag ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold bg-[#fee2e2] text-[#991b1b] border border-[#f87171] shadow-xs">
+                            <ShieldAlert className="w-3.5 h-3.5 text-[#dc2626]" />
+                            Suspicious ({r.confidence ?? 0}%)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold bg-[#fef3c7] text-[#92400e] border border-[#f59e0b]/40 shadow-xs">
+                            <ShieldAlert className="w-3.5 h-3.5 text-[#d97706]" />
+                            Low Conf ({r.confidence ?? 0}%)
+                          </span>
+                        )
+                      ) : (
+                        <span
+                          className={`inline-flex items-center justify-center px-2.5 py-1 rounded-lg font-mono text-xs shadow-xs ${scoreBadge}`}
+                        >
+                          {r.priority_score ? Number(r.priority_score).toFixed(1) : '0.0'}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       <div className="font-bold text-[#0a0a0a] capitalize text-xs tracking-tight">
@@ -192,11 +251,38 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span
-                        className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-xs ${statusBadge}`}
-                      >
-                        {r.status === 'in_progress' ? 'In Progress' : r.status}
-                      </span>
+                      {isPendingReview ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => handleReject(e, r.report_id)}
+                            disabled={actionLoadingId === r.report_id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#fee2e2] text-[#991b1b] hover:bg-[#fecaca] border border-[#f87171] transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                            title="Reject and drop report permanently"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            Reject
+                          </button>
+                          <button
+                            onClick={(e) => handleApprove(e, r.report_id)}
+                            disabled={actionLoadingId === r.report_id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0] border border-[#4ade80] transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                            title="Approve and proceed to priority dispatch"
+                          >
+                            {actionLoadingId === r.report_id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                            )}
+                            Approve &amp; Dispatch
+                          </button>
+                        </div>
+                      ) : (
+                        <span
+                          className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-xs ${statusBadge}`}
+                        >
+                          {r.status === 'in_progress' ? 'In Progress' : r.status}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-[#3a3a3a]">
                       {r.worker_phone ? (
@@ -204,6 +290,8 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
                           <UserCheck className="w-4 h-4 text-[#1a3a3a]" />
                           <span className="font-mono">{r.worker_phone}</span>
                         </div>
+                      ) : isPendingReview ? (
+                        <span className="text-[#b45309] font-medium text-xs">Gated (Admin Review)</span>
                       ) : (
                         <span className="text-[#9a9a9a] italic text-xs">Unassigned</span>
                       )}
@@ -221,3 +309,4 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
     </div>
   );
 };
+

@@ -9,7 +9,9 @@ export type ReportStatus =
   | 'in_progress'
   | 'pending_verification'
   | 'resolved'
-  | 'needs_review';
+  | 'needs_review'
+  | 'pending_admin_review'
+  | 'rejected';
 
 export type UrgencyLevel = 'low' | 'medium' | 'high' | 'unknown';
 
@@ -57,8 +59,28 @@ export interface ReportItem {
   review_reason?: string | null;
   reward_coupon_code?: string | null;
   reward_coupon_id?: string | null;
+  confidence?: number | null;
+  suspicious_flag?: boolean | null;
+  segregation_quality?: string | null;
+  recycling_category?: string | null;
+  purity_score?: number | null;
+  assigned_warehouse_id?: string | null;
+  assigned_warehouse_name?: string | null;
+  warehouse_status?: 'pending_pickup' | 'special_handling_required' | 'received' | string | null;
+  estimated_weight_kg?: number | null;
+  estimated_revenue?: number | null;
+  rejected_at?: string | null;
   status: ReportStatus;
   created_at: string;
+}
+
+export interface WarehouseItem {
+  warehouse_id: string;
+  name: string;
+  location: LocationCoordinates;
+  accepted_categories: string[];
+  city?: string;
+  area?: string;
 }
 
 export interface WorkerItem {

@@ -1,0 +1,7 @@
+[project]
+name = "recycling-categorizer"
+version = "0.1.0"
+description = "In-House Recycling Material & Purity Categorizer Module"
+dependencies = [
+    "boto3>=1.34.0",
+]

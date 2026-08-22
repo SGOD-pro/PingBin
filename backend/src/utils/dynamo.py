@@ -19,6 +19,7 @@ try:
     workers_table = dynamodb.Table(settings.DYNAMODB_TABLE_WORKERS)
     vendors_table = dynamodb.Table(settings.DYNAMODB_TABLE_VENDORS)
     coupons_table = dynamodb.Table(settings.DYNAMODB_TABLE_COUPONS)
+    warehouses_table = dynamodb.Table(settings.DYNAMODB_TABLE_WAREHOUSES)
 except Exception as e:
     logger.warning(f"Failed to initialize DynamoDB tables: {e}")
     dynamodb = None
@@ -26,6 +27,7 @@ except Exception as e:
     workers_table = None
     vendors_table = None
     coupons_table = None
+    warehouses_table = None
 
 
 # ===========================================================================
@@ -51,7 +53,7 @@ def save_raw_pending_report(report_id: str, citizen_phone: str, timestamp: str) 
         "waste_type": "unknown",
         "fill_percent": Decimal("0"),
         "urgency": "medium",
-        "priority_score": Decimal("0"),
+        "priority_score": None,
         "estimated_workers_needed": 1,
         "estimated_minutes_to_clean": 30,
         "original_estimated_minutes": 30,
@@ -64,12 +66,286 @@ def save_raw_pending_report(report_id: str, citizen_phone: str, timestamp: str) 
         "review_reason": None,
         "reward_coupon_code": None,
         "reward_coupon_id": None,
+        "confidence": None,
+        "suspicious_flag": False,
+        "segregation_quality": "unknown",
+        "recycling_category": None,
+        "purity_score": None,
+        "assigned_warehouse_id": None,
+        "assigned_warehouse_name": None,
+        "warehouse_status": None,
+        "estimated_weight_kg": None,
+        "estimated_revenue": None,
+        "rejected_at": None,
+        "has_photo": False,
+        "has_location": False,
+        "intake_started_at": timestamp,
         "status": "pending",
         "created_at": timestamp,
     }
     if reports_table:
         reports_table.put_item(Item=item)
     return item
+
+
+def create_awaiting_location_report(
+    report_id: str,
+    citizen_phone: str,
+    photo_before_url: str,
+    classification: dict,
+    timestamp: str,
+) -> dict:
+    """Create intake report when citizen sends PHOTO first."""
+    confidence = int(classification.get("confidence", 85))
+    suspicious_flag = bool(classification.get("suspicious_flag", False))
+    status = "pending_admin_review" if (confidence < 25 or suspicious_flag) else "awaiting_location"
+
+    item = {
+        "report_id": report_id,
+        "citizen_phone": citizen_phone,
+        "worker_phone": None,
+        "worker_phones": [],
+        "assigned_workers_count": 0,
+        "photo_before_url": photo_before_url,
+        "photo_after_url": None,
+        "start_photo_url": None,
+        "finish_photo_url": None,
+        "location_before": {},
+        "location_after": None,
+        "start_location": None,
+        "finish_location": None,
+        "waste_type": classification.get("waste_type", "mixed"),
+        "fill_percent": Decimal(str(classification.get("fill_percent", 50))),
+        "urgency": classification.get("urgency", "medium"),
+        "priority_score": None,
+        "estimated_workers_needed": int(classification.get("estimated_workers_needed", 1)),
+        "estimated_minutes_to_clean": int(classification.get("estimated_minutes_to_clean", 30)),
+        "original_estimated_minutes": int(classification.get("estimated_minutes_to_clean", 30)),
+        "adjusted_estimated_minutes": None,
+        "recalculated_estimated_time": None,
+        "arrival_time": None,
+        "finish_time": None,
+        "actual_duration": None,
+        "truth_percentage": None,
+        "review_reason": None,
+        "reward_coupon_code": None,
+        "reward_coupon_id": None,
+        "confidence": confidence,
+        "suspicious_flag": suspicious_flag,
+        "segregation_quality": str(classification.get("segregation_quality", "mixed")),
+        "recycling_category": None,
+        "purity_score": None,
+        "assigned_warehouse_id": None,
+        "assigned_warehouse_name": None,
+        "warehouse_status": None,
+        "estimated_weight_kg": None,
+        "estimated_revenue": None,
+        "rejected_at": None,
+        "has_photo": True,
+        "has_location": False,
+        "intake_started_at": timestamp,
+        "status": status,
+        "created_at": timestamp,
+    }
+    if reports_table:
+        reports_table.put_item(Item=item)
+    return item
+
+
+def create_awaiting_photo_report(
+    report_id: str,
+    citizen_phone: str,
+    lat: float,
+    lng: float,
+    timestamp: str,
+) -> dict:
+    """Create intake report when citizen sends LOCATION first."""
+    item = {
+        "report_id": report_id,
+        "citizen_phone": citizen_phone,
+        "worker_phone": None,
+        "worker_phones": [],
+        "assigned_workers_count": 0,
+        "photo_before_url": "",
+        "photo_after_url": None,
+        "start_photo_url": None,
+        "finish_photo_url": None,
+        "location_before": {
+            "lat": Decimal(str(lat)),
+            "lng": Decimal(str(lng)),
+        },
+        "location_after": None,
+        "start_location": None,
+        "finish_location": None,
+        "waste_type": "unknown",
+        "fill_percent": Decimal("0"),
+        "urgency": "medium",
+        "priority_score": None,
+        "estimated_workers_needed": 1,
+        "estimated_minutes_to_clean": 30,
+        "original_estimated_minutes": 30,
+        "adjusted_estimated_minutes": None,
+        "recalculated_estimated_time": None,
+        "arrival_time": None,
+        "finish_time": None,
+        "actual_duration": None,
+        "truth_percentage": None,
+        "review_reason": None,
+        "reward_coupon_code": None,
+        "reward_coupon_id": None,
+        "confidence": None,
+        "suspicious_flag": False,
+        "segregation_quality": "unknown",
+        "recycling_category": None,
+        "purity_score": None,
+        "assigned_warehouse_id": None,
+        "assigned_warehouse_name": None,
+        "warehouse_status": None,
+        "estimated_weight_kg": None,
+        "estimated_revenue": None,
+        "rejected_at": None,
+        "has_photo": False,
+        "has_location": True,
+        "intake_started_at": timestamp,
+        "status": "awaiting_photo",
+        "created_at": timestamp,
+    }
+    if reports_table:
+        reports_table.put_item(Item=item)
+    return item
+
+
+def expire_report(report_id: str) -> None:
+    """Mark an incomplete intake report as expired after 5-minute timeout."""
+    if not reports_table:
+        return
+    reports_table.update_item(
+        Key={"report_id": report_id},
+        UpdateExpression="SET #s = :s",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={":s": "expired"},
+    )
+
+
+def find_active_intake_by_phone(phone: str, timeout_seconds: int = 300) -> tuple[dict | None, bool]:
+    """
+    Find active intake report for a citizen (awaiting_photo, awaiting_location, pending_admin_review).
+    If older than timeout_seconds (5 min), marks status='expired' and returns (None, True).
+    """
+    if not reports_table:
+        return (None, False)
+    try:
+        response = reports_table.scan(
+            FilterExpression=Attr("citizen_phone").eq(phone)
+            & Attr("status").is_in(["awaiting_photo", "awaiting_location", "pending_admin_review"])
+        )
+        items = response.get("Items", [])
+        if not items:
+            return (None, False)
+
+        # Sort by creation time desc
+        items.sort(key=lambda x: x.get("intake_started_at") or x.get("created_at") or "", reverse=True)
+        latest = items[0]
+
+        # Check timeout for incomplete awaiting states
+        if latest.get("status") in ["awaiting_photo", "awaiting_location"]:
+            started_at_str = latest.get("intake_started_at") or latest.get("created_at")
+            if started_at_str:
+                try:
+                    started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
+                    now_dt = datetime.now(timezone.utc)
+                    if (now_dt - started_dt).total_seconds() > timeout_seconds:
+                        logger.info(f"Report {latest['report_id']} timed out after 5 mins — marking expired")
+                        expire_report(latest["report_id"])
+                        return (None, True)
+                except Exception as e:
+                    logger.warning(f"Error parsing intake timestamp: {e}")
+
+        return (latest, False)
+    except Exception as e:
+        logger.error(f"Error finding active intake for {phone}: {e}")
+        return (None, False)
+
+
+def complete_intake_photo_step(
+    report_id: str,
+    photo_before_url: str,
+    classification: dict,
+    priority_score: float | None = None,
+) -> dict:
+    """Record second piece (Photo) on an existing awaiting_photo report."""
+    if not reports_table:
+        return {}
+    confidence = int(classification.get("confidence", 85))
+    suspicious_flag = bool(classification.get("suspicious_flag", False))
+    status = "pending_admin_review" if (confidence < 25 or suspicious_flag) else "pending"
+
+    update_expr = (
+        "SET photo_before_url = :pbu, waste_type = :wt, fill_percent = :fp, "
+        "urgency = :u, estimated_workers_needed = :ewn, "
+        "estimated_minutes_to_clean = :emc, original_estimated_minutes = :oem, "
+        "confidence = :conf, suspicious_flag = :susp, segregation_quality = :seg, "
+        "has_photo = :hp, #s = :s"
+    )
+    expr_vals: dict = {
+        ":pbu": photo_before_url,
+        ":wt": classification.get("waste_type", "mixed"),
+        ":fp": Decimal(str(classification.get("fill_percent", 50))),
+        ":u": classification.get("urgency", "medium"),
+        ":ewn": int(classification.get("estimated_workers_needed", 1)),
+        ":emc": int(classification.get("estimated_minutes_to_clean", 30)),
+        ":oem": int(classification.get("estimated_minutes_to_clean", 30)),
+        ":conf": confidence,
+        ":susp": suspicious_flag,
+        ":seg": str(classification.get("segregation_quality", "mixed")),
+        ":hp": True,
+        ":s": status,
+    }
+    if priority_score is not None and status != "pending_admin_review":
+        update_expr += ", priority_score = :ps"
+        expr_vals[":ps"] = Decimal(str(priority_score))
+
+    reports_table.update_item(
+        Key={"report_id": report_id},
+        UpdateExpression=update_expr,
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues=expr_vals,
+    )
+    return get_report_by_id(report_id) or {}
+
+
+def complete_intake_location_step(
+    report_id: str,
+    lat: float,
+    lng: float,
+    priority_score: float | None = None,
+) -> dict:
+    """Record second piece (Location) on an existing awaiting_location report."""
+    if not reports_table:
+        return {}
+    current = get_report_by_id(report_id) or {}
+    new_status = "pending_admin_review" if current.get("status") == "pending_admin_review" else "pending"
+
+    update_expr = "SET location_before = :loc, has_location = :hl, #s = :s"
+    expr_vals: dict = {
+        ":loc": {
+            "lat": Decimal(str(lat)),
+            "lng": Decimal(str(lng)),
+        },
+        ":hl": True,
+        ":s": new_status,
+    }
+    if priority_score is not None and new_status != "pending_admin_review":
+        update_expr += ", priority_score = :ps"
+        expr_vals[":ps"] = Decimal(str(priority_score))
+
+    reports_table.update_item(
+        Key={"report_id": report_id},
+        UpdateExpression=update_expr,
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues=expr_vals,
+    )
+    return get_report_by_id(report_id) or {}
 
 
 def update_report_classification(
@@ -81,6 +357,9 @@ def update_report_classification(
     priority_score: float,
     estimated_workers_needed: int,
     estimated_minutes_to_clean: int,
+    confidence: int = 85,
+    suspicious_flag: bool = False,
+    segregation_quality: str = "mixed",
 ) -> None:
     """Update DynamoDB report with AI classification results and computed priority score."""
     if not reports_table:
@@ -90,8 +369,11 @@ def update_report_classification(
         UpdateExpression=(
             "SET photo_before_url = :pbu, waste_type = :wt, fill_percent = :fp, "
             "urgency = :u, priority_score = :ps, estimated_workers_needed = :ewn, "
-            "estimated_minutes_to_clean = :emc, original_estimated_minutes = :oem"
+            "estimated_minutes_to_clean = :emc, original_estimated_minutes = :oem, "
+            "confidence = :conf, suspicious_flag = :susp, segregation_quality = :seg, "
+            "has_photo = :hp, #s = :s"
         ),
+        ExpressionAttributeNames={"#s": "status"},
         ExpressionAttributeValues={
             ":pbu": photo_before_url,
             ":wt": waste_type,
@@ -101,8 +383,81 @@ def update_report_classification(
             ":ewn": estimated_workers_needed,
             ":emc": estimated_minutes_to_clean,
             ":oem": estimated_minutes_to_clean,
+            ":conf": confidence,
+            ":susp": suspicious_flag,
+            ":seg": segregation_quality,
+            ":hp": True,
+            ":s": "pending",
         },
     )
+
+
+def set_report_pending_admin_review(
+    report_id: str,
+    photo_before_url: str,
+    classification: dict,
+) -> None:
+    """Mark report as pending_admin_review due to low confidence (<25%) or suspicion."""
+    if not reports_table:
+        return
+    reports_table.update_item(
+        Key={"report_id": report_id},
+        UpdateExpression=(
+            "SET photo_before_url = :pbu, waste_type = :wt, fill_percent = :fp, "
+            "urgency = :u, estimated_workers_needed = :ewn, "
+            "estimated_minutes_to_clean = :emc, original_estimated_minutes = :oem, "
+            "confidence = :conf, suspicious_flag = :susp, segregation_quality = :seg, "
+            "has_photo = :hp, #s = :s"
+        ),
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={
+            ":pbu": photo_before_url,
+            ":wt": classification.get("waste_type", "mixed"),
+            ":fp": Decimal(str(classification.get("fill_percent", 50))),
+            ":u": classification.get("urgency", "medium"),
+            ":ewn": int(classification.get("estimated_workers_needed", 1)),
+            ":emc": int(classification.get("estimated_minutes_to_clean", 30)),
+            ":oem": int(classification.get("estimated_minutes_to_clean", 30)),
+            ":conf": int(classification.get("confidence", 0)),
+            ":susp": bool(classification.get("suspicious_flag", True)),
+            ":seg": str(classification.get("segregation_quality", "mixed")),
+            ":hp": True,
+            ":s": "pending_admin_review",
+        },
+    )
+
+
+def reject_report(report_id: str) -> bool:
+    """Permanently reject a pending_admin_review report."""
+    if not reports_table:
+        return False
+    now_iso = datetime.now(timezone.utc).isoformat()
+    reports_table.update_item(
+        Key={"report_id": report_id},
+        UpdateExpression="SET #s = :s, rejected_at = :ra",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={
+            ":s": "rejected",
+            ":ra": now_iso,
+        },
+    )
+    return True
+
+
+def approve_report(report_id: str, priority_score: float) -> bool:
+    """Approve a pending_admin_review report and set status to pending with priority_score."""
+    if not reports_table:
+        return False
+    reports_table.update_item(
+        Key={"report_id": report_id},
+        UpdateExpression="SET #s = :s, priority_score = :ps",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={
+            ":s": "pending",
+            ":ps": Decimal(str(priority_score)),
+        },
+    )
+    return True
 
 
 def flag_report_classification_error(report_id: str, reason: str = "classification_error") -> None:
@@ -118,21 +473,9 @@ def flag_report_classification_error(report_id: str, reason: str = "classificati
 
 
 def find_pending_report_by_phone(phone: str, window_minutes: int = 5) -> dict | None:
-    """Find the most recent pending report from the given phone number within the time window."""
-    if not reports_table:
-        return None
-    try:
-        response = reports_table.scan(
-            FilterExpression=Attr("status").eq("pending")
-            & Attr("citizen_phone").eq(phone)
-        )
-        items = response.get("Items", [])
-        if items:
-            items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-            return items[0]
-    except Exception as e:
-        logger.error(f"Scan pending report error: {e}")
-    return None
+    """Find the most recent pending or awaiting report from the given phone number within the time window."""
+    active, is_timed_out = find_active_intake_by_phone(phone, timeout_seconds=window_minutes * 60)
+    return active
 
 
 def update_report_location(report_id: str, lat: float, lng: float) -> None:
@@ -141,12 +484,13 @@ def update_report_location(report_id: str, lat: float, lng: float) -> None:
         return
     reports_table.update_item(
         Key={"report_id": report_id},
-        UpdateExpression="SET location_before = :loc",
+        UpdateExpression="SET location_before = :loc, has_location = :hl",
         ExpressionAttributeValues={
             ":loc": {
                 "lat": Decimal(str(lat)),
                 "lng": Decimal(str(lng)),
-            }
+            },
+            ":hl": True,
         },
     )
 
@@ -462,15 +806,21 @@ def get_citizen_reward_count(citizen_phone: str) -> int:
 
 
 def get_active_reports() -> list[dict]:
-    """Scan and return all active reports shown on the dashboard."""
+    """Scan and return all reports shown on the dashboard, excluding incomplete/expired intake states."""
     if not reports_table:
         return []
-    response = reports_table.scan(
-        FilterExpression=Attr("status").is_in(
-            ["pending", "assigned", "in_progress", "pending_verification", "needs_review"]
-        )
-    )
-    return response.get("Items", [])
+    try:
+        response = reports_table.scan()
+        items = response.get("Items", [])
+        filtered = [
+            item for item in items
+            if item.get("status") not in ["awaiting_photo", "awaiting_location", "expired"]
+        ]
+        filtered.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        return filtered
+    except Exception as e:
+        logger.error(f"Error scanning reports: {e}")
+        return []
 
 
 # ===========================================================================
@@ -733,3 +1083,112 @@ def get_all_coupons() -> list[dict]:
     except Exception as e:
         logger.error(f"Error fetching coupons: {e}")
         return []
+
+
+# ===========================================================================
+# WAREHOUSES & RECYCLING REVENUE
+# ===========================================================================
+
+_DEFAULT_WAREHOUSES = [
+    {
+        "warehouse_id": "wh-patia-plastic",
+        "name": "Patia Materials Recovery Facility",
+        "location": {"lat": Decimal("20.3580"), "lng": Decimal("85.8250")},
+        "accepted_categories": ["plastic", "e_waste"],
+        "city": "Bhubaneswar",
+        "area": "Patia / Infocity",
+    },
+    {
+        "warehouse_id": "wh-rasulgarh-metal",
+        "name": "Rasulgarh Industrial Recycling Hub",
+        "location": {"lat": Decimal("20.3010"), "lng": Decimal("85.8600")},
+        "accepted_categories": ["metal", "mixed"],
+        "city": "Bhubaneswar",
+        "area": "Rasulgarh",
+    },
+    {
+        "warehouse_id": "wh-chandaka-organic",
+        "name": "Chandaka Composting & Paper Depot",
+        "location": {"lat": Decimal("20.3700"), "lng": Decimal("85.7800")},
+        "accepted_categories": ["organic", "paper", "glass"],
+        "city": "Bhubaneswar",
+        "area": "Chandaka",
+    },
+    {
+        "warehouse_id": "wh-mancheswar-hazmat",
+        "name": "Mancheswar Hazardous & Chemical Disposal Facility",
+        "location": {"lat": Decimal("20.3200"), "lng": Decimal("85.8450")},
+        "accepted_categories": ["hazardous"],
+        "city": "Bhubaneswar",
+        "area": "Mancheswar IE",
+    },
+]
+
+
+def seed_warehouses_if_empty() -> None:
+    """Seed initial warehouse facilities in Bhubaneswar if table is empty."""
+    if not warehouses_table:
+        return
+    try:
+        res = warehouses_table.scan(Limit=1)
+        if not res.get("Items"):
+            logger.info("Seeding initial Bhubaneswar warehouses...")
+            for wh in _DEFAULT_WAREHOUSES:
+                warehouses_table.put_item(Item=wh)
+    except Exception as e:
+        logger.warning(f"Failed to auto-seed warehouses: {e}")
+
+
+def get_all_warehouses() -> list[dict]:
+    """Retrieve all recycling warehouses from DynamoDB."""
+    if not warehouses_table:
+        return _DEFAULT_WAREHOUSES
+    try:
+        res = warehouses_table.scan()
+        items = res.get("Items", [])
+        if not items:
+            seed_warehouses_if_empty()
+            return _DEFAULT_WAREHOUSES
+        return items
+    except Exception as e:
+        logger.error(f"Error scanning warehouses: {e}")
+        return _DEFAULT_WAREHOUSES
+
+
+def update_report_warehouse_details(
+    report_id: str,
+    recycling_category: str,
+    purity_score: int,
+    assigned_warehouse_id: str | None,
+    assigned_warehouse_name: str | None,
+    warehouse_status: str,
+    estimated_weight_kg: float,
+    estimated_revenue: float,
+) -> None:
+    """Save post-resolution recycling categorization and warehouse revenue onto report."""
+    if not reports_table:
+        return
+    update_expr = (
+        "SET recycling_category = :rc, purity_score = :ps, "
+        "warehouse_status = :ws, estimated_weight_kg = :ewk, "
+        "estimated_revenue = :er"
+    )
+    expr_vals: dict = {
+        ":rc": recycling_category,
+        ":ps": purity_score,
+        ":ws": warehouse_status,
+        ":ewk": Decimal(str(estimated_weight_kg)),
+        ":er": Decimal(str(estimated_revenue)),
+    }
+    if assigned_warehouse_id:
+        update_expr += ", assigned_warehouse_id = :wid"
+        expr_vals[":wid"] = assigned_warehouse_id
+    if assigned_warehouse_name:
+        update_expr += ", assigned_warehouse_name = :wname"
+        expr_vals[":wname"] = assigned_warehouse_name
+
+    reports_table.update_item(
+        Key={"report_id": report_id},
+        UpdateExpression=update_expr,
+        ExpressionAttributeValues=expr_vals,
+    )

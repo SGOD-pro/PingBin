@@ -332,23 +332,26 @@ useEffect(() => {
 
 ---
 
-## 6. API Gateway Configuration
-
-**Type:** HTTP API (NOT REST API — lighter, cheaper, faster)  
-**Routes:**
-| Method | Path | Integration |
-|---|---|---|
-| POST | `/webhook` | Lambda 1 (`webhook_receiver.py`) |
-| GET | `/reports` | Lambda 2 (`processor.py`) |
-| GET | `/seed` | Lambda 2 (`processor.py` - optional) |
-| OPTIONS | `/reports` | Mock (CORS preflight) |
+| Method | Path | Integration | Description |
+|---|---|---|---|
+| POST | `/webhook` | Lambda 1 (`webhook_receiver.py`) | Twilio webhook intake |
+| GET | `/reports` | Lambda 2 (`processor.py`) | List all reports |
+| POST | `/reports/{id}/reject` | Lambda 2 (`processor.py`) | Reject low-confidence report |
+| POST | `/reports/{id}/approve` | Lambda 2 (`processor.py`) | Approve low-confidence report & dispatch |
+| GET | `/warehouses` | Lambda 2 (`processor.py`) | List recycling warehouses |
+| GET | `/workers` | Lambda 2 (`processor.py`) | List sanitation workers |
+| POST | `/workers` | Lambda 2 (`processor.py`) | Add new worker |
+| GET | `/vendors` | Lambda 2 (`processor.py`) | List local vendors |
+| POST | `/vendors` | Lambda 2 (`processor.py`) | Add vendor |
+| GET | `/coupons` | Lambda 2 (`processor.py`) | List issued coupons |
+| OPTIONS | `/{proxy+}` | Lambda 2 (`processor.py`) | CORS preflight |
 
 **CORS Configuration (set at API Gateway level):**
 ```json
 {
   "allowOrigins": ["*"],
   "allowMethods": ["GET", "POST", "OPTIONS"],
-  "allowHeaders": ["Content-Type"]
+  "allowHeaders": ["Content-Type", "Authorization"]
 }
 ```
 

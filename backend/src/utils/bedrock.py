@@ -20,10 +20,10 @@ except Exception as e:
 CLASSIFICATION_ERROR = {"_error": "classification_error"}
 
 _SYSTEM_PROMPT = (
-    "You are a waste-classification engine for a municipal cleanup dispatch system. "
-    "You will receive one photo. Analyze it and return ONLY a single JSON object — "
-    "no markdown code fences, no explanation, no text before or after the JSON. "
-    "The output must be parseable directly by json.loads().\n\n"
+    "You are a waste-classification and report-integrity engine for a municipal "
+    "cleanup dispatch system. You will receive one photo. Analyze it and return "
+    "ONLY a single JSON object — no markdown code fences, no explanation, no text "
+    "before or after the JSON. The output must be parseable directly by json.loads().\n\n"
     "Return exactly this schema:\n\n"
     "{\n"
     '  "is_valid_report": boolean,\n'
@@ -32,21 +32,28 @@ _SYSTEM_PROMPT = (
     '  "urgency": string,\n'
     '  "estimated_workers_needed": integer,\n'
     '  "estimated_minutes_to_clean": integer,\n'
+    '  "confidence": integer,\n'
+    '  "suspicious_flag": boolean,\n'
+    '  "segregation_quality": string,\n'
     '  "notes": string\n'
     "}\n\n"
     "FIELD RULES:\n\n"
     "is_valid_report:\n"
     "- true if the image clearly shows waste, an overflowing bin, litter, or a dumping site.\n"
-    "- false if the image shows something unrelated (people, selfies, unrelated objects, blank/blurry/dark image, or no visible waste at all).\n"
+    "- false if the image shows something unrelated (people, selfies, unrelated objects, "
+    "blank/blurry/dark image, or no visible waste at all).\n"
     "- If false, set waste_type=\"unknown\", fill_percent=0, urgency=\"unknown\", "
-    "estimated_workers_needed=0, estimated_minutes_to_clean=0, and explain why in \"notes\".\n\n"
+    "estimated_workers_needed=0, estimated_minutes_to_clean=0, confidence=0, "
+    "suspicious_flag=true, segregation_quality=\"unknown\", and explain why in \"notes\".\n\n"
     "waste_type — choose exactly one from this list, based on the DOMINANT material visible:\n"
     "[\"plastic\", \"organic\", \"e_waste\", \"paper\", \"glass\", \"metal\", \"hazardous\", \"mixed\"]\n"
     "- Use \"mixed\" only if multiple materials are visibly present in comparable quantity.\n"
-    "- Use \"hazardous\" only for visibly dangerous material — batteries, medical waste, chemical containers, broken glass in large quantity.\n\n"
+    "- Use \"hazardous\" only for visibly dangerous material — batteries, medical waste, "
+    "chemical containers, broken glass in large quantity.\n\n"
     "fill_percent — integer 0-100:\n"
     "- If a bin/container is visible: estimate how full it is (0 = empty, 100 = overflowing).\n"
-    "- If no bin is visible: estimate based on spread/volume — small pile ≈ 20-40, moderate ≈ 40-70, large/blocking-pathway ≈ 70-100.\n"
+    "- If no bin is visible: estimate based on spread/volume — small pile ≈ 20-40, "
+    "moderate ≈ 40-70, large/blocking-pathway ≈ 70-100.\n"
     "- Do not default to round numbers unless genuinely warranted.\n\n"
     "urgency — choose exactly one: [\"low\", \"medium\", \"high\"]\n"
     "- \"high\": hazardous material visible, waste blocking a walkway/road, or fill_percent >= 80.\n"
@@ -57,14 +64,30 @@ _SYSTEM_PROMPT = (
     "- 2-3 for large spillage, multiple bins, or a wide dumping area.\n"
     "- 4 only for a clearly large-scale dumping site.\n\n"
     "estimated_minutes_to_clean — integer, realistic range 5-90:\n"
-    "- Base this on fill_percent, waste_type, and estimated area — a single overflowing bin might be 10-15 min; "
-    "a large mixed dumping site might be 45-90 min. This value assumes ONE worker.\n\n"
+    "- Base this on fill_percent, waste_type, and estimated area — a single overflowing "
+    "bin might be 10-15 min; a large mixed dumping site might be 45-90 min. This value "
+    "assumes ONE worker.\n\n"
+    "confidence — integer 0-100:\n"
+    "- How confident you are this is a genuine, clear, unambiguous waste report.\n"
+    "- Score LOW (under 25) for: blurry/dark/low-quality images, images that are "
+    "technically waste but ambiguous or hard to assess, or anything that looks staged, "
+    "reused, or inconsistent with a real on-the-ground report.\n"
+    "- Score HIGH (70+) for clear, well-lit, unambiguous waste images.\n\n"
+    "suspicious_flag — boolean:\n"
+    "- true if the image looks staged, duplicated, screenshotted, or otherwise not a "
+    "genuine first-hand photo of a real waste site. false otherwise.\n\n"
+    "segregation_quality — choose exactly one: [\"proper\", \"mixed\", \"improper\"]\n"
+    "- \"proper\": waste appears sorted by type (e.g. separated bins/piles by material).\n"
+    "- \"mixed\": some separation visible but materials overlap.\n"
+    "- \"improper\": no visible segregation, all waste types dumped together.\n\n"
     "notes — one short sentence. Keep it under 20 words.\n\n"
     "Return valid JSON only. Do not wrap it in ```json``` or any other formatting."
 )
 
 _VALID_WASTE_TYPES = {"plastic", "organic", "e_waste", "paper", "glass", "metal", "hazardous", "mixed", "unknown"}
 _VALID_URGENCY = {"low", "medium", "high", "unknown"}
+_VALID_SEGREGATION = {"proper", "mixed", "improper", "unknown"}
+
 
 
 def detect_image_format(image_bytes: bytes) -> str:
@@ -233,8 +256,8 @@ def classify_image_base64(image_base64: str, image_format: str = "jpeg") -> dict
 
         parsed = json.loads(raw_text.strip())
 
-        # If model says not a valid waste report — signal failure so caller sets needs_review
-        if not parsed.get("is_valid_report", True):
+        # If model says not a valid waste report — fail closed
+        if not parsed.get("is_valid_report", False):
             logger.info(f"Nova Lite rejected image as not a valid report: {parsed.get('notes', '')}")
             return CLASSIFICATION_ERROR.copy()
 
@@ -243,6 +266,11 @@ def classify_image_base64(image_base64: str, image_format: str = "jpeg") -> dict
         fill_percent = int(parsed.get("fill_percent", 50))
         workers_needed = max(1, min(4, int(parsed.get("estimated_workers_needed", 1))))
         minutes_to_clean = max(5, int(parsed.get("estimated_minutes_to_clean", 30)))
+        confidence = int(parsed.get("confidence", 85))
+        suspicious_flag = bool(parsed.get("suspicious_flag", False))
+        segregation_quality = str(parsed.get("segregation_quality", "mixed")).lower()
+        if segregation_quality not in _VALID_SEGREGATION:
+            segregation_quality = "mixed"
         notes = str(parsed.get("notes", ""))
 
         result = {
@@ -252,6 +280,9 @@ def classify_image_base64(image_base64: str, image_format: str = "jpeg") -> dict
             "urgency": urgency,
             "estimated_workers_needed": workers_needed,
             "estimated_minutes_to_clean": minutes_to_clean,
+            "confidence": confidence,
+            "suspicious_flag": suspicious_flag,
+            "segregation_quality": segregation_quality,
             "notes": notes,
         }
         logger.info(f"Bedrock classification parsed successfully: {result}")

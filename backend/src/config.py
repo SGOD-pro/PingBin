@@ -43,6 +43,7 @@ class Settings:
         self.DYNAMODB_TABLE_WORKERS: str = os.environ.get("DYNAMODB_TABLE_WORKERS", "Workers")
         self.DYNAMODB_TABLE_VENDORS: str = os.environ.get("DYNAMODB_TABLE_VENDORS", "Vendors")
         self.DYNAMODB_TABLE_COUPONS: str = os.environ.get("DYNAMODB_TABLE_COUPONS", "Coupons")
+        self.DYNAMODB_TABLE_WAREHOUSES: str = os.environ.get("DYNAMODB_TABLE_WAREHOUSES", "Warehouses")
         self.S3_BUCKET_IMAGES: str = os.environ.get("S3_BUCKET_IMAGES", "cleanloop-images-ap-south-1")
         self.SQS_QUEUE_URL: str = os.environ.get(
             "SQS_QUEUE_URL",
