@@ -11,8 +11,10 @@ import {
   ArrowLeft,
   CheckCircle2,
   Compass,
+  AlertCircle,
 } from 'lucide-react';
 import { lookupPincode, QUICK_AREAS } from '../utils/pincode';
+import { getApiUrl } from '../lib/api';
 
 const WORKER_AVATARS = [
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
@@ -39,7 +41,7 @@ interface WorkersModalProps {
     latitude: number;
     longitude: number;
     photo_url?: string;
-  }) => Promise<boolean>;
+  }) => Promise<{ success: boolean; error?: string } | boolean>;
 }
 
 export function WorkersModal({
@@ -59,8 +61,11 @@ export function WorkersModal({
     'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80'
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   if (!isOpen) return null;
+
+  const API_URL = getApiUrl();
 
   const handlePincodeChange = (code: string) => {
     setPincode(code);
@@ -81,20 +86,56 @@ export function WorkersModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullname || !phone) return;
+    setToast(null);
+
+    // Validation
+    const cleanName = fullname.trim();
+    let cleanPhone = phone.trim().replace(/[\s-]/g, '');
+    if (!cleanName) {
+      setToast({ type: 'error', message: 'Please enter a valid worker name.' });
+      return;
+    }
+    if (!cleanPhone.startsWith('+')) {
+      cleanPhone = `+91${cleanPhone.replace(/^0+/, '')}`;
+    }
+    if (cleanPhone.length < 10) {
+      setToast({ type: 'error', message: 'Please enter a valid phone number with country code (e.g. +919876543210).' });
+      return;
+    }
+
     setIsSubmitting(true);
-    const success = await onAddWorker({
-      fullname,
-      phone,
-      latitude: parseFloat(lat) || 20.3533,
-      longitude: parseFloat(lng) || 85.8197,
-      photo_url: photoUrl,
-    });
-    setIsSubmitting(false);
-    if (success) {
-      setFullname('');
-      setPhone('');
-      setShowAddForm(false);
+    try {
+      const res = await onAddWorker({
+        fullname: cleanName,
+        phone: cleanPhone,
+        latitude: parseFloat(lat) || 20.3533,
+        longitude: parseFloat(lng) || 85.8197,
+        photo_url: photoUrl,
+      });
+
+      const isSuccess = typeof res === 'boolean' ? res : res.success;
+      const errorMsg = typeof res === 'object' && res.error ? res.error : 'Network error';
+
+      if (isSuccess) {
+        setToast({ type: 'success', message: `✅ Worker ${cleanName} successfully enrolled into dispatch fleet!` });
+        setFullname('');
+        setPhone('');
+        setShowAddForm(false);
+        setTimeout(() => setToast(null), 5000);
+      } else {
+        setToast({
+          type: 'error',
+          message: `⚠️ Failed to add worker: ${errorMsg}. API endpoint: ${API_URL}`,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown connection error';
+      setToast({
+        type: 'error',
+        message: `⚠️ Connection failed: ${msg}. Check API CORS and network connectivity to ${API_URL}`,
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -159,7 +200,33 @@ export function WorkersModal({
         </div>
 
         {/* Body */}
-        <div className="p-6 overflow-y-auto flex-1 bg-[#fffaf0]">
+        <div className="p-6 overflow-y-auto flex-1 bg-[#fffaf0] space-y-4">
+          {/* Toast Notification */}
+          {toast && (
+            <div
+              className={`p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200 ${
+                toast.type === 'success'
+                  ? 'bg-[#e6f9f0] text-[#0d6832] border border-[#a4d4c5]'
+                  : 'bg-[#ffebee] text-[#c62828] border border-[#ffcdd2]'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {toast.type === 'success' ? (
+                  <CheckCircle2 className="w-4.5 h-4.5 text-[#0d6832] shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4.5 h-4.5 text-[#c62828] shrink-0" />
+                )}
+                <span>{toast.message}</span>
+              </div>
+              <button
+                onClick={() => setToast(null)}
+                className="p-1 hover:opacity-70 text-current cursor-pointer text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {showAddForm ? (
             /* Add Worker Form */
             <form onSubmit={handleSubmit} className="space-y-4 max-w-lg mx-auto bg-[#faf5e8] p-6 rounded-3xl border border-[#e5e5e5] shadow-sm">
@@ -377,7 +444,7 @@ export function WorkersModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-[#faf5e8] border-t border-[#e5e5e5] flex items-center justify-between text-xs text-[#3a3a3a]">
+        <div className="px-6 py-3.5 bg-[#faf5e8] border-t border-[#e5e5e5] flex flex-wrap items-center justify-between gap-3 text-xs text-[#3a3a3a]">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-[#0a0a0a] font-bold">
               <CheckCircle className="w-4 h-4 text-[#22c55e]" />
@@ -388,12 +455,18 @@ export function WorkersModal({
               {workers.filter((w) => w.status === 'busy').length} On Dispatch
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="px-6 py-2.5 text-xs font-bold rounded-xl bg-[#0a0a0a] text-white hover:bg-[#1f1f1f] transition-all active:scale-[0.98] shadow-md cursor-pointer"
-          >
-            Done
-          </button>
+
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-mono text-[#8a8a8a] bg-white px-2.5 py-1 rounded-lg border border-[#e5e5e5] max-w-[260px] truncate" title={API_URL}>
+              API: {API_URL}
+            </span>
+            <button
+              onClick={onClose}
+              className="px-6 py-2 text-xs font-bold rounded-xl bg-[#0a0a0a] text-white hover:bg-[#1f1f1f] transition-all active:scale-[0.98] shadow-md cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
         </div>
       </div>
     </div>

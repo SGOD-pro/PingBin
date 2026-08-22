@@ -20,7 +20,7 @@ export function useVendors() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [API_URL]);
 
   const addVendor = useCallback(
     async (payload: {
@@ -42,7 +42,7 @@ export function useVendors() {
       await fetchVendors();
       return res.json();
     },
-    [fetchVendors]
+    [fetchVendors, API_URL]
   );
 
   useEffect(() => {

@@ -547,6 +547,19 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
     http_method = event.get("httpMethod") or (event.get("requestContext", {}).get("http", {}).get("method"))
     path = event.get("resource") or event.get("path") or (event.get("requestContext", {}).get("http", {}).get("path"))
 
+    # Handle CORS Preflight OPTIONS
+    if http_method == "OPTIONS":
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token",
+                "Access-Control-Max-Age": "86400",
+            },
+            "body": "",
+        }
+
     # GET /health
     if http_method == "GET" and path in ("/health", "/health/", "/"):
         return ok({"status": "healthy", "service": "PingBin", "timestamp": datetime.now(timezone.utc).isoformat()})
@@ -554,6 +567,34 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
     # GET /reports
     if http_method == "GET" and path in ("/reports", "/reports/"):
         return ok(get_active_reports())
+
+    # GET /workers
+    if http_method == "GET" and path in ("/workers", "/workers/"):
+        from utils.dynamo import workers_table
+        try:
+            items = workers_table.scan().get("Items", [])
+            return ok(items)
+        except Exception as e:
+            logger.error(f"GET /workers error: {e}")
+            return err(str(e), 500)
+
+    # POST /workers
+    if http_method == "POST" and path in ("/workers", "/workers/"):
+        from utils.dynamo import create_worker
+        try:
+            body = json.loads(event.get("body") or "{}")
+            fullname = body.get("fullname", "").strip()
+            phone = body.get("phone", "").strip()
+            latitude = float(body.get("latitude", 20.3533))
+            longitude = float(body.get("longitude", 85.8197))
+            photo_url = body.get("photo_url")
+            if not fullname or not phone:
+                return err("fullname and phone are required")
+            item = create_worker(fullname, phone, latitude, longitude, photo_url)
+            return ok({"status": "created", "worker": item})
+        except Exception as e:
+            logger.error(f"POST /workers error: {e}")
+            return err(str(e), 500)
 
     # POST /vendors
     if http_method == "POST" and path in ("/vendors", "/vendors/"):

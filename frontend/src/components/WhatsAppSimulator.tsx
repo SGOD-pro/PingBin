@@ -570,10 +570,10 @@ export function WhatsAppSimulator() {
               </div>
               <div>
                 <div className="font-bold text-sm leading-tight flex items-center gap-1.5">
-                  <span>Worker A (Patia / KIIT Hub)</span>
+                  <span>Worker 1 (Field Unit - Patia)</span>
                 </div>
                 <div className="text-[11px] text-[#a4d4c5] font-mono">
-                  +91 92634 05367 • Field Sanitation Crew
+                  +91 93821 22857 • Field Sanitation Crew
                 </div>
               </div>
             </div>

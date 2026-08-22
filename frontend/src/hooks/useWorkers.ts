@@ -32,19 +32,23 @@ export function useWorkers() {
     latitude: number;
     longitude: number;
     photo_url?: string;
-  }) => {
+  }): Promise<{ success: boolean; error?: string }> => {
     try {
       const res = await fetch(`${API_URL}/workers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(workerData),
       });
-      if (!res.ok) throw new Error('Failed to add worker');
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        throw new Error(`Server responded with ${res.status}: ${errorText || res.statusText}`);
+      }
       await fetchWorkers();
-      return true;
-    } catch (e) {
+      return { success: true };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Network error';
       console.error('Error adding worker:', e);
-      return false;
+      return { success: false, error: msg };
     }
   };
 

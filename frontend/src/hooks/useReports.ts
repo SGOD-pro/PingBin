@@ -26,7 +26,7 @@ export function useReports() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [API_URL]);
 
   useEffect(() => {
     fetchReports();

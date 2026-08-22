@@ -60,6 +60,10 @@ Parameters:
     Type: String
     Default: 'cleanloop-images-ap-south-1'
     Description: S3 Bucket for waste images
+  FrontendUrl:
+    Type: String
+    Default: 'https://ping-bin-qorc.vercel.app'
+    Description: Deployed Vercel Frontend URL
 
 Resources:
   # -------------------------------------------------------------
@@ -72,11 +76,19 @@ Resources:
         AllowMethods:
           - GET
           - POST
+          - PUT
+          - DELETE
           - OPTIONS
         AllowHeaders:
           - Content-Type
           - Authorization
+          - X-Amz-Date
+          - X-Api-Key
+          - X-Amz-Security-Token
         AllowOrigins:
+          - 'https://ping-bin-qorc.vercel.app'
+          - 'http://localhost:5173'
+          - 'http://localhost:3000'
           - '*'
 
   # -------------------------------------------------------------
@@ -156,6 +168,18 @@ Resources:
             ApiId: !Ref PingBinHttpApi
             Path: /reports
             Method: GET
+        GetWorkers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /workers
+            Method: GET
+        PostWorkers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /workers
+            Method: POST
         GetVendors:
           Type: HttpApi
           Properties:

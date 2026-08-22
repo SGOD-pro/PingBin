@@ -50,25 +50,25 @@ for w in existing_workers:
 
 bhubaneswar_workers = [
     {
-        "name": "Worker A (Patia / KIIT Hub)",
+        "name": "Worker 1 (Field Unit - Patia)",
+        "phone": "+919382122857",
+        "lat": 20.3533,
+        "lng": 85.8197,
+        "photo_url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80",
+    },
+    {
+        "name": "Worker 2 (Field Unit - Patia)",
+        "phone": "+919932948540",
+        "lat": 20.3533,
+        "lng": 85.8197,
+        "photo_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+    },
+    {
+        "name": "Worker 3 (Auxiliary Fleet)",
         "phone": "+919263405367",
         "lat": 20.3533,
         "lng": 85.8197,
         "photo_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
-    },
-    {
-        "name": "Worker B (Infocity Hub)",
-        "phone": "+919382122857",
-        "lat": 20.3540,
-        "lng": 85.8200,
-        "photo_url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80",
-    },
-    {
-        "name": "Worker C (Different Location - Remote)",
-        "phone": "+919932948540",
-        "lat": 18.9322,
-        "lng": 72.8347,
-        "photo_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
     },
 ]
 
