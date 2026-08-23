@@ -1,6 +1,8 @@
-boto3>=1.34.0
-requests>=2.31.0
-twilio>=8.12.0
-python-multipart>=0.0.9
-fastapi>=0.110.0
-uvicorn>=0.28.0
+boto3>=1.43.76
+fastapi>=0.141.1
+pydantic>=2.13.4
+pydantic-settings>=2.15.0
+python-multipart>=0.0.32
+requests>=2.34.2
+twilio>=9.11.0
+uvicorn>=0.52.4

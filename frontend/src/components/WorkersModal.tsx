@@ -11,10 +11,11 @@ import {
   ArrowLeft,
   CheckCircle2,
   Compass,
-  AlertCircle,
+  Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { lookupPincode, QUICK_AREAS } from '../utils/pincode';
-import { getApiUrl } from '../lib/api';
+import { WorkerFormSchema } from '../lib/schemas';
 
 const WORKER_AVATARS = [
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
@@ -61,11 +62,9 @@ export function WorkersModal({
     'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80'
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   if (!isOpen) return null;
-
-  const API_URL = getApiUrl();
 
   const handlePincodeChange = (code: string) => {
     setPincode(code);
@@ -86,66 +85,74 @@ export function WorkersModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setToast(null);
+    setFormErrors({});
 
-    // Validation
-    const cleanName = fullname.trim();
     let cleanPhone = phone.trim().replace(/[\s-]/g, '');
-    if (!cleanName) {
-      setToast({ type: 'error', message: 'Please enter a valid worker name.' });
-      return;
-    }
     if (!cleanPhone.startsWith('+')) {
       cleanPhone = `+91${cleanPhone.replace(/^0+/, '')}`;
     }
-    if (cleanPhone.length < 10) {
-      setToast({ type: 'error', message: 'Please enter a valid phone number with country code (e.g. +919876543210).' });
+
+    const payload = {
+      fullname: fullname.trim(),
+      phone: cleanPhone,
+      latitude: parseFloat(lat) || 20.3533,
+      longitude: parseFloat(lng) || 85.8197,
+      photo_url: photoUrl.trim() || undefined,
+    };
+
+    // Zod Schema Validation
+    const validationResult = WorkerFormSchema.safeParse(payload);
+    if (!validationResult.success) {
+      const fieldErrors: Record<string, string> = {};
+      for (const issue of validationResult.error.issues) {
+        if (issue.path[0]) {
+          fieldErrors[issue.path[0] as string] = issue.message;
+        }
+      }
+      setFormErrors(fieldErrors);
+      toast.error('Validation Error', {
+        description: validationResult.error.issues[0]?.message || 'Please check form fields.',
+      });
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const res = await onAddWorker({
-        fullname: cleanName,
-        phone: cleanPhone,
-        latitude: parseFloat(lat) || 20.3533,
-        longitude: parseFloat(lng) || 85.8197,
-        photo_url: photoUrl,
-      });
-
+      const res = await onAddWorker(validationResult.data);
       const isSuccess = typeof res === 'boolean' ? res : res.success;
       const errorMsg = typeof res === 'object' && res.error ? res.error : 'Network error';
 
       if (isSuccess) {
-        setToast({ type: 'success', message: `✅ Worker ${cleanName} successfully enrolled into dispatch fleet!` });
+        toast.success('Worker Enrolled', {
+          description: `${payload.fullname} (${payload.phone}) registered in fleet roster.`,
+        });
         setFullname('');
         setPhone('');
         setShowAddForm(false);
-        setTimeout(() => setToast(null), 5000);
       } else {
-        setToast({
-          type: 'error',
-          message: `⚠️ Failed to add worker: ${errorMsg}. API endpoint: ${API_URL}`,
+        toast.error('Enrollment Failed', {
+          description: errorMsg,
         });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown connection error';
-      setToast({
-        type: 'error',
-        message: `⚠️ Connection failed: ${msg}. Check API CORS and network connectivity to ${API_URL}`,
+      toast.error('Registration Error', {
+        description: msg,
       });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const inputCls =
-    'w-full bg-white text-[#0a0a0a] border border-[#e5e5e5] rounded-xl px-4 py-2.5 text-xs font-medium placeholder:text-[#9a9a9a] focus:outline-none focus:ring-2 focus:ring-[#0a0a0a] transition-all shadow-xs';
+  const inputCls = (fieldName?: string) =>
+    `w-full bg-white text-[#0a0a0a] border ${
+      fieldName && formErrors[fieldName] ? 'border-rose-500 ring-1 ring-rose-500' : 'border-[#e5e5e5]'
+    } rounded-xl px-4 py-2.5 text-xs font-medium placeholder:text-[#9a9a9a] focus:outline-none focus:ring-2 focus:ring-[#0a0a0a] transition-all shadow-xs`;
   const labelCls = 'block text-[10px] font-mono font-bold uppercase tracking-wider text-[#6a6a6a] mb-1.5';
 
   return (
     <div
-      className="fixed inset-0 z-[2000] bg-black/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[2000] bg-black/75 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
@@ -153,10 +160,10 @@ export function WorkersModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-4 py-2.5 border-b border-[#e5e5e5] flex items-center justify-between bg-[#faf5e8]">
+        <div className="px-6 py-4 border-b border-[#e5e5e5] flex items-center justify-between bg-[#faf5e8]">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#0a0a0a] text-white flex items-center justify-center font-bold shadow-sm">
-              <Users className="w-4.5 h-4.5 text-[#a4d4c5]" />
+            <div className="w-10 h-10 rounded-xl bg-[#0a0a0a] text-white flex items-center justify-center font-bold shadow-sm">
+              <Users className="w-5 h-5 text-[#a4d4c5]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -201,32 +208,6 @@ export function WorkersModal({
 
         {/* Body */}
         <div className="p-6 overflow-y-auto flex-1 bg-[#fffaf0] space-y-4">
-          {/* Toast Notification */}
-          {toast && (
-            <div
-              className={`p-3.5 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200 ${
-                toast.type === 'success'
-                  ? 'bg-[#e6f9f0] text-[#0d6832] border border-[#a4d4c5]'
-                  : 'bg-[#ffebee] text-[#c62828] border border-[#ffcdd2]'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                {toast.type === 'success' ? (
-                  <CheckCircle2 className="w-4.5 h-4.5 text-[#0d6832] shrink-0" />
-                ) : (
-                  <AlertCircle className="w-4.5 h-4.5 text-[#c62828] shrink-0" />
-                )}
-                <span>{toast.message}</span>
-              </div>
-              <button
-                onClick={() => setToast(null)}
-                className="p-1 hover:opacity-70 text-current cursor-pointer text-xs font-bold"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
           {showAddForm ? (
             /* Add Worker Form */
             <form onSubmit={handleSubmit} className="space-y-4 max-w-lg mx-auto bg-[#faf5e8] p-6 rounded-3xl border border-[#e5e5e5] shadow-sm">
@@ -247,8 +228,11 @@ export function WorkersModal({
                   placeholder="e.g. Ramesh Kumar"
                   value={fullname}
                   onChange={(e) => setFullname(e.target.value)}
-                  className={inputCls}
+                  className={inputCls('fullname')}
                 />
+                {formErrors.fullname && (
+                  <p className="text-[10px] text-rose-600 font-semibold mt-1">{formErrors.fullname}</p>
+                )}
               </div>
 
               <div>
@@ -259,12 +243,15 @@ export function WorkersModal({
                   placeholder="+919876543210"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className={inputCls}
+                  className={inputCls('phone')}
                 />
+                {formErrors.phone && (
+                  <p className="text-[10px] text-rose-600 font-semibold mt-1">{formErrors.phone}</p>
+                )}
               </div>
 
               {/* Pincode & Area Selector */}
-              <div className="p-3 bg-white rounded-2xl border border-[#e5e5e5] space-y-3 shadow-xs">
+              <div className="p-3.5 bg-white rounded-2xl border border-[#e5e5e5] space-y-3 shadow-xs">
                 <div>
                   <label className={labelCls}>
                     <span className="flex items-center gap-1">
@@ -344,7 +331,7 @@ export function WorkersModal({
                   placeholder="https://images.unsplash.com/..."
                   value={photoUrl}
                   onChange={(e) => setPhotoUrl(e.target.value)}
-                  className={inputCls}
+                  className={inputCls('photo_url')}
                 />
               </div>
 
@@ -362,7 +349,10 @@ export function WorkersModal({
                   className="px-6 py-2.5 text-xs font-bold rounded-xl bg-[#0a0a0a] text-white hover:bg-[#1f1f1f] transition-all shadow-md disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                 >
                   {isSubmitting ? (
-                    'Registering...'
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-[#a4d4c5]" />
+                      <span>Registering...</span>
+                    </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-[#a4d4c5]" />
@@ -457,9 +447,6 @@ export function WorkersModal({
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-[10px] font-mono text-[#8a8a8a] bg-white px-2.5 py-1 rounded-lg border border-[#e5e5e5] max-w-[260px] truncate" title={API_URL}>
-              API: {API_URL}
-            </span>
             <button
               onClick={onClose}
               className="px-6 py-2 text-xs font-bold rounded-xl bg-[#0a0a0a] text-white hover:bg-[#1f1f1f] transition-all active:scale-[0.98] shadow-md cursor-pointer"

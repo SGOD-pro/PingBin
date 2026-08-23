@@ -13,7 +13,8 @@ import {
   Loader2,
   CheckCheck,
 } from 'lucide-react';
-import { getApiUrl } from '../lib/api';
+import { toast } from 'sonner';
+import * as api from '../lib/api';
 
 interface ReportDetailModalProps {
   report: ReportItem | null;
@@ -26,7 +27,6 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
   onClose,
   onRefresh,
 }) => {
-  const API_URL = getApiUrl();
   const [actionLoading, setActionLoading] = useState<boolean>(false);
 
   if (!report) return null;
@@ -38,15 +38,17 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
   else if (score >= 50) scoreBadgeBg = 'bg-[#e8b94a] text-[#735100]';
 
   const handleReject = async () => {
-    if (!confirm('Are you sure you want to reject and drop this report?')) return;
     try {
       setActionLoading(true);
-      const res = await fetch(`${API_URL}/reports/${report.report_id}/reject`, { method: 'POST' });
-      if (!res.ok) throw new Error('Reject failed');
+      await api.rejectReport(report.report_id);
+      toast.success('Report Rejected', {
+        description: `Incident #${report.report_id.slice(0, 8)} rejected. Rejection notice dispatched to citizen.`,
+      });
       if (onRefresh) onRefresh();
       onClose();
-    } catch (err) {
-      alert(`Failed to reject report: ${err}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to reject report';
+      toast.error('Rejection Error', { description: msg });
     } finally {
       setActionLoading(false);
     }
@@ -55,12 +57,15 @@ export const ReportDetailModal: React.FC<ReportDetailModalProps> = ({
   const handleApprove = async () => {
     try {
       setActionLoading(true);
-      const res = await fetch(`${API_URL}/reports/${report.report_id}/approve`, { method: 'POST' });
-      if (!res.ok) throw new Error('Approve failed');
+      const res = await api.approveReport(report.report_id);
+      toast.success('Approved & Dispatched', {
+        description: `Incident #${report.report_id.slice(0, 8)} approved (Score: ${res.priority_score ?? 'Auto'}).`,
+      });
       if (onRefresh) onRefresh();
       onClose();
-    } catch (err) {
-      alert(`Failed to approve & dispatch report: ${err}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to approve report';
+      toast.error('Approval Error', { description: msg });
     } finally {
       setActionLoading(false);
     }

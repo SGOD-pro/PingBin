@@ -234,10 +234,16 @@ def classify_image_base64(image_base64: str, image_format: str = "jpeg") -> dict
                 ],
             }
         ],
+        # temperature=0 + topP=1.0 → greedy decoding → deterministic outputs for same image
+        "inferenceConfig": {
+            "temperature": 0.0,
+            "topP": 1.0,
+            "maxTokens": 512,
+        },
     }
 
     try:
-        logger.info(f"Invoking Bedrock Nova Lite ({model_id}) with format={image_format}...")
+        logger.info(f"Invoking Bedrock Nova Lite ({model_id}) with format={image_format}, temperature=0 (deterministic)...")
         response = bedrock_client.invoke_model(
             modelId=model_id,
             body=json.dumps(payload),
@@ -265,7 +271,8 @@ def classify_image_base64(image_base64: str, image_format: str = "jpeg") -> dict
         urgency = _normalize_urgency(parsed.get("urgency", "medium"))
         fill_percent = int(parsed.get("fill_percent", 50))
         workers_needed = max(1, min(4, int(parsed.get("estimated_workers_needed", 1))))
-        minutes_to_clean = max(5, int(parsed.get("estimated_minutes_to_clean", 30)))
+        # Hard clamp to sane range [5, 90] as specified in the system prompt
+        minutes_to_clean = max(5, min(90, int(parsed.get("estimated_minutes_to_clean", 30))))
         confidence = int(parsed.get("confidence", 85))
         suspicious_flag = bool(parsed.get("suspicious_flag", False))
         segregation_quality = str(parsed.get("segregation_quality", "mixed")).lower()

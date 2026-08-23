@@ -227,10 +227,10 @@ def expire_report(report_id: str) -> None:
     )
 
 
-def find_active_intake_by_phone(phone: str, timeout_seconds: int = 300) -> tuple[dict | None, bool]:
+def find_active_intake_by_phone(phone: str, timeout_seconds: int = 150) -> tuple[dict | None, bool]:
     """
     Find active intake report for a citizen (awaiting_photo, awaiting_location, pending_admin_review).
-    If older than timeout_seconds (5 min), marks status='expired' and returns (None, True).
+    If older than timeout_seconds (2.5 min), marks status='expired' and returns (None, True).
     """
     if not reports_table:
         return (None, False)
@@ -556,13 +556,14 @@ def assign_workers_to_report(
 
 
 def find_assigned_report_for_worker(worker_phone: str) -> dict | None:
-    """Find the active assigned report where worker_phone is assigned."""
+    """Find the active assigned report where worker_phone is assigned, prioritized by most recent."""
     if not reports_table:
         return None
     try:
         response = reports_table.scan(FilterExpression=Attr("status").eq("assigned"))
         items = response.get("Items", [])
-        for item in items:
+        items_sorted = sorted(items, key=lambda x: x.get("created_at") or "", reverse=True)
+        for item in items_sorted:
             phones = item.get("worker_phones", [])
             single = item.get("worker_phone")
             if worker_phone == single or worker_phone in phones:
@@ -573,13 +574,14 @@ def find_assigned_report_for_worker(worker_phone: str) -> dict | None:
 
 
 def find_in_progress_report_for_worker(worker_phone: str) -> dict | None:
-    """Find the in_progress report where worker_phone is working."""
+    """Find the in_progress report where worker_phone is working, prioritized by most recent."""
     if not reports_table:
         return None
     try:
         response = reports_table.scan(FilterExpression=Attr("status").eq("in_progress"))
         items = response.get("Items", [])
-        for item in items:
+        items_sorted = sorted(items, key=lambda x: x.get("created_at") or "", reverse=True)
+        for item in items_sorted:
             phones = item.get("worker_phones", [])
             single = item.get("worker_phone")
             if worker_phone == single or worker_phone in phones:
@@ -828,12 +830,17 @@ def get_active_reports() -> list[dict]:
 # ===========================================================================
 
 def create_worker(name: str, phone: str, lat: float, lng: float, photo_url: str = "") -> dict:
-    """Create a new worker in DynamoDB with unique UUID."""
+    """Create a new worker in DynamoDB with unique phone number and UUID."""
+    clean_phone = phone.strip()
+    existing = get_worker_by_phone(clean_phone)
+    if existing:
+        raise ValueError(f"Worker with phone {clean_phone} is already registered (Worker ID: {existing.get('worker_id')})")
+
     worker_id = f"worker-{uuid.uuid4().hex[:8]}"
     item = {
         "worker_id": worker_id,
-        "name": name,
-        "phone": phone.strip(),
+        "name": name.strip(),
+        "phone": clean_phone,
         "photo_url": photo_url or "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80",
         "last_known_location": {
             "lat": Decimal(str(lat)),
@@ -1086,21 +1093,31 @@ def get_all_coupons() -> list[dict]:
 
 
 # ===========================================================================
-# WAREHOUSES & RECYCLING REVENUE
+# Warehouses / MRF Facilities Module
 # ===========================================================================
 
 _DEFAULT_WAREHOUSES = [
     {
         "warehouse_id": "wh-patia-plastic",
         "name": "Patia Materials Recovery Facility",
+        "category": "plastic",
+        "rate_per_kg": Decimal("12.0"),
+        "capacity_kg": Decimal("10000"),
+        "current_stock_kg": Decimal("0"),
+        "address": "Patia / Infocity, Bhubaneswar",
         "location": {"lat": Decimal("20.3580"), "lng": Decimal("85.8250")},
-        "accepted_categories": ["plastic", "e_waste"],
+        "accepted_categories": ["plastic", "e_waste", "mixed"],
         "city": "Bhubaneswar",
         "area": "Patia / Infocity",
     },
     {
         "warehouse_id": "wh-rasulgarh-metal",
         "name": "Rasulgarh Industrial Recycling Hub",
+        "category": "metal",
+        "rate_per_kg": Decimal("16.0"),
+        "capacity_kg": Decimal("15000"),
+        "current_stock_kg": Decimal("0"),
+        "address": "Rasulgarh Industrial Zone, Bhubaneswar",
         "location": {"lat": Decimal("20.3010"), "lng": Decimal("85.8600")},
         "accepted_categories": ["metal", "mixed"],
         "city": "Bhubaneswar",
@@ -1109,16 +1126,26 @@ _DEFAULT_WAREHOUSES = [
     {
         "warehouse_id": "wh-chandaka-organic",
         "name": "Chandaka Composting & Paper Depot",
+        "category": "organic",
+        "rate_per_kg": Decimal("6.0"),
+        "capacity_kg": Decimal("8000"),
+        "current_stock_kg": Decimal("0"),
+        "address": "Chandaka Agricultural Hub, Bhubaneswar",
         "location": {"lat": Decimal("20.3700"), "lng": Decimal("85.7800")},
-        "accepted_categories": ["organic", "paper", "glass"],
+        "accepted_categories": ["organic", "paper", "glass", "mixed"],
         "city": "Bhubaneswar",
         "area": "Chandaka",
     },
     {
         "warehouse_id": "wh-mancheswar-hazmat",
         "name": "Mancheswar Hazardous & Chemical Disposal Facility",
+        "category": "hazardous_medical",
+        "rate_per_kg": Decimal("8.0"),
+        "capacity_kg": Decimal("5000"),
+        "current_stock_kg": Decimal("0"),
+        "address": "Mancheswar Industrial Estate, Bhubaneswar",
         "location": {"lat": Decimal("20.3200"), "lng": Decimal("85.8450")},
-        "accepted_categories": ["hazardous"],
+        "accepted_categories": ["hazardous", "hazardous_medical", "mixed"],
         "city": "Bhubaneswar",
         "area": "Mancheswar IE",
     },
@@ -1130,13 +1157,40 @@ def seed_warehouses_if_empty() -> None:
     if not warehouses_table:
         return
     try:
-        res = warehouses_table.scan(Limit=1)
-        if not res.get("Items"):
+        res = warehouses_table.scan()
+        items = res.get("Items", [])
+        if not items:
             logger.info("Seeding initial Bhubaneswar warehouses...")
             for wh in _DEFAULT_WAREHOUSES:
                 warehouses_table.put_item(Item=wh)
+        else:
+            # Backfill any missing rate_per_kg or category in existing warehouse items
+            for wh in items:
+                needs_update = False
+                update_expr = []
+                expr_vals = {}
+                wid = wh.get("warehouse_id")
+                if not wh.get("rate_per_kg"):
+                    update_expr.append("rate_per_kg = :r")
+                    expr_vals[":r"] = Decimal("8.0")
+                    needs_update = True
+                if not wh.get("category"):
+                    cat = (wh.get("accepted_categories") or ["mixed"])[0]
+                    update_expr.append("category = :c")
+                    expr_vals[":c"] = cat
+                    needs_update = True
+                if not wh.get("capacity_kg"):
+                    update_expr.append("capacity_kg = :cap")
+                    expr_vals[":cap"] = Decimal("5000")
+                    needs_update = True
+                if needs_update and wid:
+                    warehouses_table.update_item(
+                        Key={"warehouse_id": wid},
+                        UpdateExpression="SET " + ", ".join(update_expr),
+                        ExpressionAttributeValues=expr_vals,
+                    )
     except Exception as e:
-        logger.warning(f"Failed to auto-seed warehouses: {e}")
+        logger.warning(f"Failed to auto-seed / update warehouses: {e}")
 
 
 def get_all_warehouses() -> list[dict]:
@@ -1149,7 +1203,19 @@ def get_all_warehouses() -> list[dict]:
         if not items:
             seed_warehouses_if_empty()
             return _DEFAULT_WAREHOUSES
-        return items
+        
+        # Ensure every warehouse object has category, rate_per_kg, capacity_kg
+        sanitized = []
+        for wh in items:
+            wh_copy = dict(wh)
+            if "rate_per_kg" not in wh_copy or wh_copy["rate_per_kg"] is None:
+                wh_copy["rate_per_kg"] = Decimal(str(wh_copy.get("price_per_kg") or 8.0))
+            if "category" not in wh_copy or not wh_copy["category"]:
+                wh_copy["category"] = (wh_copy.get("accepted_categories") or ["mixed"])[0]
+            if "capacity_kg" not in wh_copy or wh_copy["capacity_kg"] is None:
+                wh_copy["capacity_kg"] = Decimal("5000")
+            sanitized.append(wh_copy)
+        return sanitized
     except Exception as e:
         logger.error(f"Error scanning warehouses: {e}")
         return _DEFAULT_WAREHOUSES
@@ -1192,3 +1258,96 @@ def update_report_warehouse_details(
         UpdateExpression=update_expr,
         ExpressionAttributeValues=expr_vals,
     )
+
+
+def create_warehouse(
+    name: str,
+    category: str,
+    rate_per_kg: float,
+    capacity_kg: float,
+    address: str = "",
+    lat: float = 20.2961,
+    lng: float = 85.8245,
+    accepted_categories: list[str] | None = None,
+    city: str = "Bhubaneswar",
+    area: str = "Central",
+) -> dict:
+    """Create a new recycling warehouse / MRF facility in DynamoDB."""
+    warehouse_id = f"wh-{uuid.uuid4().hex[:8]}"
+    item = {
+        "warehouse_id": warehouse_id,
+        "name": name.strip(),
+        "category": category.strip().lower(),
+        "rate_per_kg": Decimal(str(rate_per_kg)),
+        "capacity_kg": Decimal(str(capacity_kg)),
+        "current_stock_kg": Decimal("0"),
+        "address": address.strip(),
+        "location": {
+            "lat": Decimal(str(lat)),
+            "lng": Decimal(str(lng)),
+        },
+        "accepted_categories": accepted_categories or [category.strip().lower()],
+        "city": city,
+        "area": area,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if warehouses_table:
+        warehouses_table.put_item(Item=item)
+    return item
+
+
+def get_warehouse_by_id(warehouse_id: str) -> dict | None:
+    """Fetch warehouse item by warehouse_id."""
+    if not warehouses_table:
+        return None
+    try:
+        res = warehouses_table.get_item(Key={"warehouse_id": warehouse_id})
+        return res.get("Item")
+    except Exception as e:
+        logger.error(f"Error fetching warehouse {warehouse_id}: {e}")
+        return None
+
+
+def assign_report_to_warehouse(
+    report_id: str,
+    warehouse_id: str,
+    actual_weight_kg: float,
+) -> dict:
+    """Assign a resolved report to a designated recycling warehouse with measured weight and calculated revenue."""
+    if not reports_table:
+        raise RuntimeError("Reports table not available")
+
+    report_res = reports_table.get_item(Key={"report_id": report_id})
+    report = report_res.get("Item")
+    if not report:
+        raise ValueError(f"Report {report_id} not found")
+
+    warehouses = get_all_warehouses()
+    warehouse = next((w for w in warehouses if w.get("warehouse_id") == warehouse_id), None)
+    if not warehouse:
+        raise ValueError(f"Warehouse {warehouse_id} not found")
+
+    rate = float(warehouse.get("rate_per_kg", 8.0))
+    purity = float(report.get("purity_score", 85))
+    revenue = round(actual_weight_kg * rate * (purity / 100.0), 2)
+    warehouse_name = warehouse.get("name", "Recycling Hub")
+
+    update_report_warehouse_details(
+        report_id=report_id,
+        recycling_category=report.get("recycling_category") or warehouse.get("category", "mixed"),
+        purity_score=int(purity),
+        assigned_warehouse_id=warehouse_id,
+        assigned_warehouse_name=warehouse_name,
+        warehouse_status="assigned",
+        estimated_weight_kg=actual_weight_kg,
+        estimated_revenue=revenue,
+    )
+
+    return {
+        "report_id": report_id,
+        "assigned_warehouse_id": warehouse_id,
+        "assigned_warehouse_name": warehouse_name,
+        "actual_weight_kg": actual_weight_kg,
+        "actual_revenue": revenue,
+        "warehouse_status": "assigned",
+    }

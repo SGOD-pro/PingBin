@@ -17,8 +17,9 @@ import {
   AlertTriangle,
   ShieldAlert,
   Layers,
+  Clock,
 } from 'lucide-react';
-import { getApiUrl } from '../lib/api';
+import * as api from '../lib/api';
 
 interface ChatMessage {
   id: string;
@@ -42,10 +43,10 @@ export type DemoScenario =
   | 'happy_path'
   | 'fake_work_gate'
   | 'safety_gate_suspicious'
-  | 'order_agnostic_loc_first';
+  | 'order_agnostic_loc_first'
+  | 'session_timeout_expired';
 
 export function WhatsAppSimulator() {
-  const API_URL = getApiUrl();
   const [scenario, setScenario] = useState<DemoScenario>('happy_path');
   const [isSimulating, setIsSimulating] = useState(false);
   const [currentStep, setCurrentStep] = useState<number>(0);
@@ -103,11 +104,7 @@ export function WhatsAppSimulator() {
 
   // Helper to trigger background backend sync (bypassing Twilio SMS network)
   const syncBackend = (payload: Record<string, any>) => {
-    fetch(`${API_URL}/dev/simulate-message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch((err) => console.warn('Backend sync notice:', err));
+    api.simulateMessage(payload).catch((err) => console.warn('Backend sync notice:', err));
   };
 
   const runSimulation = () => {
@@ -578,6 +575,77 @@ export function WhatsAppSimulator() {
         setIsSimulating(false);
       }, 5500);
     }
+
+    // =========================================================================
+    // SCENARIO 5: INTAKE SESSION EXPIRED (>2.5 min)
+    // =========================================================================
+    else if (scenario === 'session_timeout_expired') {
+      // Step 1: Citizen sends photo
+      scheduleStep(() => {
+        setCurrentStep(1);
+        setCitizenMessages([
+          {
+            id: 'c1',
+            sender: 'user',
+            type: 'image',
+            imageUrl: 'http://localhost:8000/images/dustbins-india-T5BHA9.jpg',
+            text: 'Garbage dump near Patia square',
+            time: '14:00',
+            status: 'read',
+          },
+          {
+            id: 'c2',
+            sender: 'system',
+            type: 'text',
+            text: '📸 Photo received! Please share your live GPS location within 2.5 minutes to dispatch a cleaning team.',
+            time: '14:00',
+          },
+        ]);
+      }, 400);
+
+      // Step 2: System clock advances past 150s (2.5 min session timeout)
+      scheduleStep(() => {
+        setCurrentStep(2);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c3',
+            sender: 'system',
+            type: 'text',
+            text: '⏱️ Session Expired: More than 2.5 minutes passed without receiving your location. This pending ticket has been auto-closed.',
+            time: '14:03',
+          },
+        ]);
+      }, 3000);
+
+      // Step 3: Citizen tries sending location late
+      scheduleStep(() => {
+        setCurrentStep(3);
+        setCitizenMessages((prev) => [
+          ...prev,
+          {
+            id: 'c4',
+            sender: 'user',
+            type: 'location',
+            location: {
+              name: 'Patia Square, Bhubaneswar',
+              lat: 20.3533,
+              lng: 85.8197,
+            },
+            time: '14:04',
+            status: 'read',
+          },
+          {
+            id: 'c5',
+            sender: 'system',
+            type: 'text',
+            text: '⚠️ Your previous intake session timed out (>2.5 min). We have started a fresh report for you with this location! Please send a new photo of the waste.',
+            time: '14:04',
+          },
+        ]);
+        setIsSimulating(false);
+      }, 5500);
+    }
   };
 
   return (
@@ -664,7 +732,7 @@ export function WhatsAppSimulator() {
           <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#6a6a6a] block mb-3">
             Select Pitch Demonstration Test Case:
           </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {[
               {
                 id: 'happy_path' as DemoScenario,
@@ -697,6 +765,14 @@ export function WhatsAppSimulator() {
                 icon: Layers,
                 tag: 'Edge Case',
                 color: 'border-[#0a3a40] text-[#0a3a40]',
+              },
+              {
+                id: 'session_timeout_expired' as DemoScenario,
+                title: '5. Intake Session Expired (>2.5 min)',
+                desc: 'Citizen sends photo but delays GPS > 2.5 min ➔ Session auto-expires ➔ Restart prompt.',
+                icon: Clock,
+                tag: 'Timeout Gate',
+                color: 'border-[#6b7280] text-[#374151]',
               },
             ].map((sc) => {
               const isSelected = scenario === sc.id;

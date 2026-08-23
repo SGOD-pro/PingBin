@@ -77,10 +77,16 @@ export interface ReportItem {
 export interface WarehouseItem {
   warehouse_id: string;
   name: string;
+  category?: string;
+  rate_per_kg?: number;
+  capacity_kg?: number;
+  current_stock_kg?: number;
+  address?: string;
   location: LocationCoordinates;
   accepted_categories: string[];
   city?: string;
   area?: string;
+  created_at?: string;
 }
 
 export interface WorkerItem {

@@ -5,9 +5,9 @@ from decimal import Decimal
 from typing import Any
 from urllib.parse import parse_qs
 from fastapi import FastAPI, Request, Response, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from config import settings
 import webhook_receiver
 import processor
@@ -182,29 +182,39 @@ def list_workers():
 
 @app.post("/workers")
 def add_worker(payload: dict[str, Any]):
-    """Add a new sanitation worker via Admin Dashboard."""
-    from utils.dynamo import create_worker
-    name = payload.get("fullname") or payload.get("name") or "Field Worker"
-    phone = payload.get("phone") or payload.get("whatsapp_number", "")
-    lat = float(payload.get("latitude") or payload.get("lat") or 12.9716)
-    lng = float(payload.get("longitude") or payload.get("lng") or 77.5946)
+    """Add a new sanitation worker via Admin Dashboard with unique phone validation."""
+    from utils.dynamo import create_worker, get_worker_by_phone
+    name = (payload.get("fullname") or payload.get("name") or "Field Worker").strip()
+    phone = (payload.get("phone") or payload.get("whatsapp_number", "")).strip()
+    lat = float(payload.get("latitude") or payload.get("lat") or 20.3533)
+    lng = float(payload.get("longitude") or payload.get("lng") or 85.8197)
     photo_url = payload.get("photo_url") or payload.get("photo", "")
 
     if not phone:
-        return {"error": "WhatsApp phone number is required"}
+        return JSONResponse(status_code=400, content={"error": "WhatsApp phone number is required"})
 
-    item = create_worker(name=name, phone=phone, lat=lat, lng=lng, photo_url=photo_url)
-    return {
-        "status": "created",
-        "worker": {
-            "worker_id": item["worker_id"],
-            "name": item["name"],
-            "phone": item["phone"],
-            "photo_url": item["photo_url"],
-            "status": item["status"],
-            "last_known_location": {"lat": lat, "lng": lng},
-        },
-    }
+    existing = get_worker_by_phone(phone)
+    if existing:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Worker with phone {phone} is already registered as {existing.get('name')} (ID: {existing.get('worker_id')})."}
+        )
+
+    try:
+        item = create_worker(name=name, phone=phone, lat=lat, lng=lng, photo_url=photo_url)
+        return {
+            "status": "created",
+            "worker": {
+                "worker_id": item["worker_id"],
+                "name": item["name"],
+                "phone": item["phone"],
+                "photo_url": item["photo_url"],
+                "status": item["status"],
+                "last_known_location": {"lat": lat, "lng": lng},
+            },
+        }
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 @app.post("/dev/simulate-message")
@@ -277,6 +287,160 @@ def list_warehouses():
     """Return all recycling warehouses for the admin dashboard."""
     from utils.dynamo import get_all_warehouses
     return [_serialize(w) for w in get_all_warehouses()]
+
+
+@app.post("/warehouses")
+def add_warehouse(payload: dict[str, Any]):
+    """Add a new recycling warehouse or MRF facility via the admin dashboard."""
+    from utils.dynamo import create_warehouse
+    name = (payload.get("name") or "").strip()
+    category = (payload.get("category") or "mixed").strip().lower()
+    rate_per_kg = float(payload.get("rate_per_kg") or payload.get("price_per_kg") or 8.0)
+    capacity_kg = float(payload.get("capacity_kg") or 5000.0)
+    address = (payload.get("address") or "").strip()
+    lat = float(payload.get("latitude") or payload.get("lat") or 20.2961)
+    lng = float(payload.get("longitude") or payload.get("lng") or 85.8245)
+    accepted_categories = payload.get("accepted_categories") or [category]
+
+    if not name:
+        return JSONResponse(status_code=400, content={"error": "Facility name is required"})
+
+    try:
+        item = create_warehouse(
+            name=name,
+            category=category,
+            rate_per_kg=rate_per_kg,
+            capacity_kg=capacity_kg,
+            address=address,
+            lat=lat,
+            lng=lng,
+            accepted_categories=accepted_categories,
+        )
+        return {"status": "created", "warehouse": _serialize(item)}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+@app.post("/reports/{report_id}/assign-warehouse")
+def assign_report_warehouse_endpoint(report_id: str, payload: dict[str, Any]):
+    """Admin manually assigns resolved waste report to a warehouse with measured weight."""
+    from utils.dynamo import assign_report_to_warehouse
+    warehouse_id = payload.get("warehouse_id")
+    actual_weight_kg = float(payload.get("actual_weight_kg") or payload.get("weight_kg") or 25.0)
+
+    if not warehouse_id:
+        return JSONResponse(status_code=400, content={"error": "warehouse_id is required"})
+
+    try:
+        res = assign_report_to_warehouse(
+            report_id=report_id,
+            warehouse_id=warehouse_id,
+            actual_weight_kg=actual_weight_kg,
+        )
+        return {"status": "assigned", "result": _serialize(res)}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+@app.post("/reports/prune-test-data")
+def prune_test_data_endpoint():
+    """Prune excessive synthetic test data, purge test vendors, reset workers, and keep a clean database."""
+    from utils.dynamo import reports_table, workers_table, vendors_table, warehouses_table, seed_warehouses_if_empty, _DEFAULT_WAREHOUSES
+    try:
+        # Clean reports: purge stuck/failed test reports and keep only top recent reports
+        deleted_count = 0
+        if reports_table:
+            items = reports_table.scan().get("Items", [])
+            items_sorted = sorted(items, key=lambda x: x.get("created_at") or "", reverse=True)
+            keep_ids = set()
+            for item in items_sorted:
+                st = item.get("status")
+                # Don't keep old failed truth score test reports with "truth_score_too_low"
+                if item.get("review_reason") == "truth_score_too_low":
+                    continue
+                if st in ["pending_admin_review", "resolved", "assigned", "pending"]:
+                    if len(keep_ids) < 8:
+                        keep_ids.add(item["report_id"])
+
+            for item in items:
+                rid = item.get("report_id")
+                if rid not in keep_ids:
+                    reports_table.delete_item(Key={"report_id": rid})
+                    deleted_count += 1
+
+        # Clean workers: ensure free status and phone deduplication
+        if workers_table:
+            workers = workers_table.scan().get("Items", [])
+            seen_phones = set()
+            for w in workers:
+                phone = w.get("phone")
+                wid = w.get("worker_id")
+                if phone in seen_phones:
+                    workers_table.delete_item(Key={"worker_id": wid})
+                else:
+                    seen_phones.add(phone)
+                    # Reset worker to free
+                    workers_table.update_item(
+                        Key={"worker_id": wid},
+                        UpdateExpression="SET #s = :s",
+                        ExpressionAttributeNames={"#s": "status"},
+                        ExpressionAttributeValues={":s": "free"},
+                    )
+
+        # Clean vendors: delete temporary test vendors starting with TestVendor_
+        deleted_vendors = 0
+        if vendors_table:
+            vendors = vendors_table.scan().get("Items", [])
+            for v in vendors:
+                vid = v.get("vendor_id")
+                vname = v.get("name", "")
+                if vname.startswith("TestVendor_") or "TestVendor" in vid:
+                    vendors_table.delete_item(Key={"vendor_id": vid})
+                    deleted_vendors += 1
+
+        # Clean warehouses: ensure standard 4 warehouses exist with complete rates
+        if warehouses_table:
+            whs = warehouses_table.scan().get("Items", [])
+            for wh in whs:
+                wid = wh.get("warehouse_id", "")
+                wname = wh.get("name", "")
+                if "Demo MRF" in wname or wid.startswith("wh-khandagiri-demo"):
+                    warehouses_table.delete_item(Key={"warehouse_id": wid})
+            seed_warehouses_if_empty()
+
+        return {
+            "status": "success",
+            "deleted_reports": deleted_count,
+            "deleted_test_vendors": deleted_vendors,
+        }
+    except Exception as e:
+        logger.error(f"Error during prune-test-data: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/dev/reset-workers")
+def reset_workers_endpoint():
+    """Dev-only: reset all workers to 'free' status so tests don't starve each other."""
+    from utils.dynamo import workers_table
+    if not workers_table:
+        return JSONResponse(status_code=500, content={"error": "workers_table not available"})
+    try:
+        workers = workers_table.scan().get("Items", [])
+        reset_count = 0
+        for w in workers:
+            wid = w.get("worker_id")
+            if wid and w.get("status") != "free":
+                workers_table.update_item(
+                    Key={"worker_id": wid},
+                    UpdateExpression="SET #s = :s",
+                    ExpressionAttributeNames={"#s": "status"},
+                    ExpressionAttributeValues={":s": "free"},
+                )
+                reset_count += 1
+        return {"status": "reset", "workers_freed": reset_count, "total_workers": len(workers)}
+    except Exception as e:
+        logger.error(f"Error resetting workers: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.get("/coupons")

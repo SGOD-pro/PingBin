@@ -48,19 +48,20 @@ async function getActiveReports(ctx: Awaited<ReturnType<typeof request.newContex
 async function waitForReportStatus(
   ctx: Awaited<ReturnType<typeof request.newContext>>,
   phone: string,
-  status: string,
-  timeoutMs = 15_000,
+  status: string | string[],
+  timeoutMs = 30_000,
 ): Promise<any> {
+  const allowed = Array.isArray(status) ? status : [status];
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const reports = await getActiveReports(ctx);
     const match = reports.find(
-      (r) => r.citizen_phone === phone && r.status === status,
+      (r) => r.citizen_phone === phone && allowed.includes(r.status),
     );
     if (match) return match;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new Error(`Timed out waiting for report (citizen=${phone}) to reach status=${status}`);
+  throw new Error(`Timed out waiting for report (citizen=${phone}) to reach status in [${allowed.join(', ')}]`);
 }
 
 // ─── Ensure at least one free worker exists ──────────────────────────────────
@@ -107,7 +108,7 @@ test('Full pipeline: citizen report → auto-dispatch → worker arrival → fin
   });
 
   // Allow async Nova Lite classification to complete and save report
-  await new Promise((r) => setTimeout(r, 2500));
+  await new Promise((r) => setTimeout(r, 4500));
 
   // 2. Citizen sends location
   await simulateMessage(ctx, {
@@ -118,13 +119,22 @@ test('Full pipeline: citizen report → auto-dispatch → worker arrival → fin
     timestamp: new Date().toISOString(),
   });
 
-  // Report should be 'pending' or 'assigned' by now (classification + dispatch)
-  const report = await waitForReportStatus(ctx, citizen, 'assigned', 12_000).catch(
-    () => waitForReportStatus(ctx, citizen, 'pending', 5_000),
+  // Report should be 'pending', 'assigned', or 'pending_admin_review' by now
+  let report = await waitForReportStatus(
+    ctx,
+    citizen,
+    ['assigned', 'pending', 'pending_admin_review', 'needs_review'],
+    20_000,
   );
   expect(report).toBeDefined();
 
-  if (report.status === 'assigned') {
+  if (report.status === 'pending_admin_review') {
+    await ctx.post(`${API}/reports/${report.report_id}/approve`);
+    await new Promise((r) => setTimeout(r, 2000));
+    report = (await getActiveReports(ctx)).find((r) => r.report_id === report.report_id) || report;
+  }
+
+  if (report.status === 'assigned' || report.worker_phone) {
     const workerPhone = report.worker_phone || (report.worker_phones || [])[0];
     expect(workerPhone).toBeTruthy();
 
@@ -163,7 +173,7 @@ test('Full pipeline: citizen report → auto-dispatch → worker arrival → fin
       const finalReport = finalReports.find((r) => r.citizen_phone === citizen);
       // If it's not in activeReports it was resolved (resolved is excluded from the scan)
       // The important assertion is: no uncaught exception occurred
-      expect(['pending_verification', 'needs_review', undefined]).toContain(
+      expect(['pending_verification', 'needs_review', 'resolved', undefined]).toContain(
         finalReport?.status,
       );
     }

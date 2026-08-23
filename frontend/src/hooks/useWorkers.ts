@@ -1,21 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { WorkerItem } from '../types';
-import { getApiUrl } from '../lib/api';
+import * as api from '../lib/api';
 
 export function useWorkers() {
   const [workers, setWorkers] = useState<WorkerItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_URL = getApiUrl();
-
   const fetchWorkers = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/workers`, {
-        cache: 'no-store',
-      });
-      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
-      const data: WorkerItem[] = await res.json();
+      const data = await api.getWorkers();
       setWorkers(data);
       setError(null);
     } catch (err: unknown) {
@@ -24,7 +18,7 @@ export function useWorkers() {
     } finally {
       setLoading(false);
     }
-  }, [API_URL]);
+  }, []);
 
   const addWorker = async (workerData: {
     fullname: string;
@@ -34,15 +28,16 @@ export function useWorkers() {
     photo_url?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     try {
-      const res = await fetch(`${API_URL}/workers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(workerData),
+      await api.createWorker({
+        name: workerData.fullname,
+        phone: workerData.phone,
+        last_known_location: {
+          lat: workerData.latitude,
+          lng: workerData.longitude,
+        },
+        photo_url: workerData.photo_url,
+        status: 'free',
       });
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => '');
-        throw new Error(`Server responded with ${res.status}: ${errorText || res.statusText}`);
-      }
       await fetchWorkers();
       return { success: true };
     } catch (e: unknown) {

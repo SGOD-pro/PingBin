@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import type { ReportItem } from '../types';
-import { Flame, UserCheck, Search, Filter, ShieldAlert, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
-import { getApiUrl } from '../lib/api';
+import { Flame, UserCheck, Search, ShieldAlert, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import * as api from '../lib/api';
 
 interface PriorityQueueProps {
   reports: ReportItem[];
@@ -16,14 +17,13 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
   onSelectReport,
   onRefresh,
 }) => {
-  const API_URL = getApiUrl();
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  // Active tickets (pending, assigned, in_progress, pending_admin_review)
+  // Active tickets (pending, assigned, in_progress, pending_admin_review, rejected)
   const queueReports = reports.filter((r) =>
-    ['pending', 'assigned', 'in_progress', 'pending_admin_review'].includes(r.status)
+    ['pending', 'assigned', 'in_progress', 'pending_admin_review', 'rejected'].includes(r.status)
   );
 
   const filteredReports = queueReports.filter((r) => {
@@ -40,14 +40,16 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
 
   const handleReject = async (e: React.MouseEvent, reportId: string) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to reject this low-confidence report?')) return;
     try {
       setActionLoadingId(reportId);
-      const res = await fetch(`${API_URL}/reports/${reportId}/reject`, { method: 'POST' });
-      if (!res.ok) throw new Error('Reject failed');
+      await api.rejectReport(reportId);
+      toast.success('Report Rejected', {
+        description: `Report ${reportId.slice(0, 8)} rejected. WhatsApp notice sent to citizen.`,
+      });
       if (onRefresh) onRefresh();
-    } catch (err) {
-      alert(`Failed to reject report: ${err}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Reject failed';
+      toast.error('Rejection Error', { description: msg });
     } finally {
       setActionLoadingId(null);
     }
@@ -57,11 +59,14 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
     e.stopPropagation();
     try {
       setActionLoadingId(reportId);
-      const res = await fetch(`${API_URL}/reports/${reportId}/approve`, { method: 'POST' });
-      if (!res.ok) throw new Error('Approve failed');
+      const res = await api.approveReport(reportId);
+      toast.success('Approved & Dispatched', {
+        description: `Ticket ${reportId.slice(0, 8)} approved (Priority Score: ${res.priority_score ?? 'Auto'}).`,
+      });
       if (onRefresh) onRefresh();
-    } catch (err) {
-      alert(`Failed to approve & dispatch report: ${err}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Approve failed';
+      toast.error('Approval Error', { description: msg });
     } finally {
       setActionLoadingId(null);
     }
@@ -81,7 +86,7 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
                 Live Priority Queue
               </h3>
               <span className="bg-[#0a0a0a] text-white font-mono text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-xs">
-                {queueReports.length} Active
+                {queueReports.length} Total
               </span>
             </div>
             <p className="text-xs text-[#6a6a6a]">
@@ -100,6 +105,7 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
               { id: 'pending', label: 'Pending' },
               { id: 'assigned', label: 'Assigned' },
               { id: 'in_progress', label: 'Active' },
+              { id: 'rejected', label: 'Rejected' },
             ].map((st) => (
               <button
                 key={st.id}
@@ -119,34 +125,33 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
             <Search className="w-3.5 h-3.5 text-[#9a9a9a] absolute left-3 top-2.5" />
             <input
               type="text"
-              placeholder="Search..."
+              placeholder="Search reports..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white border border-[#e5e5e5] text-[#0a0a0a] text-xs pl-8 pr-3 py-1.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0a0a0a] w-32 sm:w-36 placeholder:text-[#9a9a9a] shadow-xs"
+              className="pl-8 pr-3 py-1 bg-white rounded-xl border border-[#e5e5e5] text-xs text-[#0a0a0a] placeholder-[#9a9a9a] focus:outline-hidden focus:border-[#0a0a0a] w-36 sm:w-44 transition-all shadow-xs"
             />
           </div>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto overflow-y-auto flex-1 max-h-[460px]">
-        <table className="w-full text-left text-xs">
-          <thead className="bg-[#f5f0e0] text-[#0a0a0a]/80 uppercase text-[10px] font-mono font-bold tracking-wider sticky top-0 z-10 border-b border-[#e5e5e5]">
-            <tr>
-              <th className="py-3 px-5">Score / Gate</th>
-              <th className="py-3 px-4">Type &amp; Urgency</th>
-              <th className="py-3 px-4">Fill Level</th>
-              <th className="py-3 px-4">Status &amp; Actions</th>
-              <th className="py-3 px-4">Assigned Worker</th>
-              <th className="py-3 px-5 text-right">Age</th>
+      {/* Table with fixed height and auto overflow */}
+      <div className="overflow-x-auto overflow-y-auto max-h-[520px] flex-1">
+        <table className="w-full text-left border-collapse">
+          <thead className="sticky top-0 z-10 bg-[#f5f0e0]/95 backdrop-blur-xs">
+            <tr className="border-b border-[#e5e5e5] text-[10px] font-mono uppercase tracking-wider text-[#6a6a6a]">
+              <th className="py-2.5 px-5 font-bold">Priority Score / Safety Gate</th>
+              <th className="py-2.5 px-4 font-bold">Waste Type &amp; Urgency</th>
+              <th className="py-2.5 px-4 font-bold">Fill %</th>
+              <th className="py-2.5 px-4 font-bold">Status / Action</th>
+              <th className="py-2.5 px-4 font-bold">Assigned Worker</th>
+              <th className="py-2.5 px-5 font-bold text-right">Age</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#e5e5e5] bg-[#fffaf0]">
+          <tbody className="divide-y divide-[#e5e5e5]/60 text-xs">
             {filteredReports.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-[#6a6a6a]">
-                  <Filter className="w-7 h-7 mx-auto mb-2 opacity-40 text-[#9a9a9a]" />
-                  <p className="text-xs font-semibold">No active tickets matching filter.</p>
+                <td colSpan={6} className="text-center py-12 text-[#9a9a9a] font-medium">
+                  No incident reports matching filter.
                 </td>
               </tr>
             ) : (
@@ -171,6 +176,8 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
                   statusBadge = 'bg-[#edf7f4] text-[#0a3a2a] border border-[#a4d4c5]';
                 if (r.status === 'pending_admin_review')
                   statusBadge = 'bg-[#fffbeb] text-[#b45309] border border-[#f59e0b]/50';
+                if (r.status === 'rejected')
+                  statusBadge = 'bg-[#fee2e2] text-[#991b1b] border border-[#f87171]';
 
                 // Age calculation
                 let ageStr = 'recent';
@@ -252,28 +259,28 @@ export const PriorityQueue: React.FC<PriorityQueueProps> = ({
                     </td>
                     <td className="py-3.5 px-4">
                       {isPendingReview ? (
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={(e) => handleReject(e, r.report_id)}
                             disabled={actionLoadingId === r.report_id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#fee2e2] text-[#991b1b] hover:bg-[#fecaca] border border-[#f87171] transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                            title="Reject and drop report permanently"
+                            className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#fee2e2] text-[#dc2626] hover:bg-[#fecaca] hover:scale-105 border border-[#f87171] transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                            title="Reject Report"
+                            aria-label="Reject"
                           >
-                            <XCircle className="w-3.5 h-3.5" />
-                            Reject
+                            <XCircle className="w-4 h-4" />
                           </button>
                           <button
                             onClick={(e) => handleApprove(e, r.report_id)}
                             disabled={actionLoadingId === r.report_id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[#dcfce7] text-[#166534] hover:bg-[#bbf7d0] border border-[#4ade80] transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                            title="Approve and proceed to priority dispatch"
+                            className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#dcfce7] text-[#16a34a] hover:bg-[#bbf7d0] hover:scale-105 border border-[#4ade80] transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                            title="Approve & Dispatch"
+                            aria-label="Approve & Dispatch"
                           >
                             {actionLoadingId === r.report_id ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
-                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <CheckCircle2 className="w-4 h-4" />
                             )}
-                            Approve &amp; Dispatch
                           </button>
                         </div>
                       ) : (

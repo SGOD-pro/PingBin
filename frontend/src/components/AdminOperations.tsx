@@ -642,7 +642,7 @@ export const AdminOperations: React.FC<AdminOperationsProps> = ({ onToast }) => 
             </div>
 
             {/* Vendor list */}
-            <div className="px-7 py-5 space-y-3 min-h-[340px]">
+            <div className="px-7 py-5 space-y-3 min-h-[340px] max-h-[500px] overflow-y-auto pr-4 scrollbar-thin">
               {vendorsLoading ? (
                 <div className="flex flex-col items-center justify-center h-48 text-center text-[#a0a0a0]">
                   <Loader2 className="w-6 h-6 animate-spin mb-2" />

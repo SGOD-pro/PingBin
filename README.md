@@ -1,106 +1,122 @@
 # 🚀 PingBin — Intelligent Municipal Logistics & Verification Network
 
-**PingBin** is an enterprise-grade municipal logistics and civic verification network powered by real-time citizen WhatsApp intake, AWS Bedrock Nova Lite multimodal vision triage, deterministic two-gate anti-fake-work audit telemetry, and hyperlocal commercial coupon rewards.
+> **PS-03: Intelligent Waste Collection & Municipal Logistics Network (HACQUIRE 2026)**  
+> **Live Command Center:** Real-Time React (Vite) + Tailwind CSS + shadcn/ui Dashboard  
+> **Backend Architecture:** Serverless Event-Driven AWS Lambda (2 Handlers) + AWS SQS + Amazon Bedrock Nova Lite + AWS DynamoDB
 
 ---
 
-## 🏛️ HACQUIRE M&A Trading Floor — Tradable Assets Catalog
+## 🎯 Executive Overview
 
-According to HACQUIRE M&A trading floor rules, all modules below are packaged as **standalone, fully decoupled directories in `/modules/`** with zero imports from the core application, dedicated `pyproject.toml`, `.env.example`, standalone `README.md`, and strict interface contracts.
+**PingBin** is an enterprise-grade municipal waste triage, workforce dispatch, and anti-fraud verification platform.
 
-### 💰 Budget & Valuation Strategy
-- **Core Feature Assets Budget Cap:** Up to **10.00 Cr Credits**
-- **Auxiliary Modules Budget Cap:** Up to **5.00 Cr Credits**
-
----
-
-## 📦 Summary of Tradable Modules
-
-| # | Tradable Asset | Category | Directory | Asking Price | Interface Signature |
-|:---:|---|---|---|:---:|---|
-| **1** | **Truth Score Verification Engine** | Core Audit IP | [`/modules/truth-verification-engine/`](file:///home/swyra/projects/garbage-collector/modules/truth-verification-engine/) | **₹4.50 – 5.00 Cr** | `verify_work(data: dict) -> dict` |
-| **2** | **Dynamic Vendor & Auto-Coupon Engine** | Commercial IP | [`/modules/reward-engine/`](file:///home/swyra/projects/garbage-collector/modules/reward-engine/) | **₹3.50 – 4.00 Cr** | `generate_reward(vendors: list[dict]) -> dict` |
-| **3** | **WhatsApp Intake & Webhook Decoupler** | Ingestion IP | [`/modules/whatsapp-intake/`](file:///home/swyra/projects/garbage-collector/modules/whatsapp-intake/) | **₹3.00 – 3.50 Cr** | `handle_webhook(event: dict) -> dict` |
-
-**Total Combined Portfolio Valuation:** **₹11.00 – 12.50 Cr Credits**
+It solves urban sanitation challenges at the source:
+1. **Zero Citizen Friction:** Citizens report illegal waste piles in seconds via **native WhatsApp** (photo + live location pin) — no custom mobile apps to download or register for.
+2. **Sub-500ms Webhook Ingestion:** Twilio webhooks are acknowledged instantly via serverless AWS SQS decoupling, eliminating 15-second webhook timeout failures.
+3. **Multimodal AI Vision & Safety Gate:** AWS Bedrock Nova Lite triages waste category, fill percentage, urgency, and estimated cleanup time, with automated low-confidence gating (`<25%`) and suspicious image detection via [`modules/safety-gate/`](modules/safety-gate/).
+4. **Dynamic Multi-Worker Dispatch:** Automatically computes required workforce ($1-4$ staff) and assigns nearest available field units using Haversine geospatial proximity.
+5. **Two-Gate Anti-Fake-Work Telemetry:** Eliminates worker fraud via mathematical **Gate A (Spatial Proximity $\le 50\text{m}$)** and **Gate B (Temporal Duration $\ge 50\%$ of estimated work)** before any report is marked resolved via [`modules/truth-verification-engine/`](modules/truth-verification-engine/).
+6. **Hyperlocal Merchant Gamification:** Automatically mints collision-resistant merchant discount coupons (`CL-{PREFIX}-{RAND}-{DISCOUNT}`) for citizens upon verified cleanup via [`modules/reward-engine/`](modules/reward-engine/).
+7. **Warehouse Service & Materials Recovery (MRF) Integration:** After cleanup is verified, routes the collected garbage to specialized recycling warehouses (MRFs) for circular recycling and computes municipal revenue via [`modules/recycling-categorizer/`](modules/recycling-categorizer/).
 
 ---
 
-## 🔍 Deep-Dive Module Breakdown
+## 💡 Why WhatsApp Beats Custom Municipal Apps
 
-### 1. Truth Score Verification Engine (`/modules/truth-verification-engine/`)
-- **Asking Price:** ₹4.50 – ₹5.00 Cr
-- **Description:** Deterministic 2-Gate Anti-Fake-Work & Field Telemetry Audit Engine. Validates spatial proximity ($\le 50\text{m}$) via inline Haversine math and temporal execution plausibility ($\ge 50\%$) with zero external dependencies.
-- **Contract:**
-  ```python
-  from verifier import verify_work
-
-  result = verify_work({
-      "estimated_minutes": 40,
-      "actual_minutes": 35,
-      "start_lat": 12.9716, "start_lng": 77.5946,
-      "end_lat": 12.9718, "end_lng": 77.5949
-  })
-  # Returns: {"truth_percentage": 87, "gps_distance_meters": 22.5, "status": "resolved", "reason": "..."}
-  ```
-- **Cross-PS Value:** Usable in PS-1 (Waste), PS-4 (E-Commerce Deliveries), PS-6 (Pothole Road Repair), and PS-9 (Disaster Aid Drop Verification).
+| Approach | Adoption Limitation | PingBin's Advantage |
+|---|---|---|
+| **Custom Mobile Apps** | Requires app store download, permissions, login, and updates — high friction kills civic pilots. | **WhatsApp Native:** 2-tap photo + location sharing. 500M+ existing active users. |
+| **Municipal IoT Hardware** | Requires expensive fixed bin sensors, solar hardware, and continuous maintenance. | **Zero Hardware Capex:** Citizen phone acts as the sensor; AI extracts state from imagery. |
+| **Manual Worker Checkoff** | Workers can self-certify completions remotely without performing actual work. | **Two-Gate Deterministic Verification:** Mathematical GPS lock ($\le 50\text{m}$) + time plausibility audit ($\ge 50\%$). |
 
 ---
 
-### 2. Dynamic Vendor & Auto-Coupon Engine (`/modules/reward-engine/`)
-- **Asking Price:** ₹3.50 – ₹4.00 Cr
-- **Description:** Automated merchant voucher orchestration engine. Automatically matches eligible local sponsors and generates collision-resistant promo vouchers with zero database locking overhead.
-- **Contract:**
-  ```python
-  from reward import generate_reward
+## 🏗️ Architecture & Core Loop
 
-  voucher = generate_reward([{"vendor_id": "1", "vendor_name": "BigBasket", "discount_percent": 10}])
-  # Returns: {"selected_vendor": "BigBasket", "coupon_code": "CL-BIG-8X4P-10", "message": "10% off at BigBasket"}
-  ```
-- **Cross-PS Value:** Usable in PS-1 (Civic Waste Rewards), PS-4 (Eco-Packaging Return Incentives), PS-6 (Public Transit Commute Perks), and PS-9 (Volunteer Aid Tokens).
+```mermaid
+flowchart TD
+    Citizen([📱 Citizen WhatsApp]) -->|1. Photo / GPS Pin| API[API Gateway POST /webhook]
+    API -->|2. <100ms ACK| L1[Lambda 1: Webhook Receiver]
+    L1 -->|3. Push Event| SQS[(AWS SQS Queue)]
+    SQS -->|4. Trigger| L2[Lambda 2: Core Processor]
+    L2 -->|5. Vision Triage & Safety Gate| Bedrock[Amazon Bedrock Nova Lite + Safety Gate]
+    L2 -->|6. Store State| Dynamo[(AWS DynamoDB)]
+    L2 -->|7. Multi-Worker Route| Workers([👷 Field Workers WhatsApp])
+    Workers -->|8. Start + Finish Proof| API
+    L2 -->|9. Two-Gate Telemetry| Verifier{Two-Gate Audit}
+    Verifier -->|Pass >=50%| Resolved[Status: Resolved + Coupon Minted]
+    Verifier -->|Fail <50% or GPS >50m| ReviewQueue[Status: Needs Review Quarantine]
+    Resolved -->|10. Warehouse Logistics| MRF[Send Garbage to MRF Warehouse & Compute Revenue]
+    Dynamo -->|11. Live Sync| UI[🖥️ React Admin Command Center]
+```
 
 ---
 
-### 3. WhatsApp Intake & Webhook Decoupler (`/modules/whatsapp-intake/`)
-- **Asking Price:** ₹3.00 – ₹3.50 Cr
-- **Description:** Sub-100ms Twilio WhatsApp webhook intake processor for AWS Lambda. Decouples heavy downstream AI processing by immediately returning `<Response></Response>` XML ACK and dispatching normalized JSON to AWS SQS.
-- **Contract:**
-  ```python
-  from handler import handle_webhook
+## 📦 System Modules & Feature Components
 
-  response = handle_webhook(event)
-  # Returns: {"statusCode": 200, "headers": {"Content-Type": "application/xml"}, "body": "<Response></Response>"}
-  ```
-- **Cross-PS Value:** Usable in any real-time messaging pipeline requiring zero-friction citizen reporting without webhook timeouts.
+For deep-dive technical specifications and M&A audit details, see:
+- 📄 [`MODULES.md`](MODULES.md) — Master index and single source of truth
+- 📄 [`TRADABLE_ASSETS.md`](TRADABLE_ASSETS.md) — Sell-side packaged IP catalog
+- 📄 [`ACQUIRED_ASSETS.md`](ACQUIRED_ASSETS.md) — Buy-side M&A audit & delivery status
+
+### Modules Table
+
+| Item | Category | Location | Origin | Live Status |
+|---|---|---|---|:---:|
+| **Safety Gate (confidence/suspicious/segregation check)** | 🛠️ In-house standalone module | [`modules/safety-gate/`](modules/safety-gate/) | Replaces undelivered Heavy Coding acquisition | 🟢 **LIVE** |
+| **Warehouse Routing & Recycling Logistics Module** | 🛠️ In-house standalone module | [`modules/recycling-categorizer/`](modules/recycling-categorizer/) | Replaces undelivered ANOMALY acquisition | 🟢 **LIVE** |
+| **Truth Score Verification Engine** | 🔄 Tradable IP / Built In-House | [`modules/truth-verification-engine/`](modules/truth-verification-engine/) | Built in-house (`MOD-TRUTH-VERIFY-01`, asking ₹4.50–5.00 Cr) | 🟢 **LIVE** |
+| **Dynamic Vendor & Auto-Coupon Engine** | 🔄 Tradable IP / Built In-House | [`modules/reward-engine/`](modules/reward-engine/) | Built in-house (`MOD-REWARD-ENGINE-02`, asking ₹3.50–4.00 Cr) | 🟢 **LIVE** |
+| **WhatsApp Intake & Webhook Decoupler** | 🔄 Tradable IP / Built In-House | [`modules/whatsapp-intake/`](modules/whatsapp-intake/) | Built in-house (`MOD-WHATSAPP-INTAKE-03`, asking ₹3.00–3.50 Cr) | 🟢 **LIVE** |
 
 ---
 
 ## 🛠️ Verification & Testing
 
-Run all standalone module unit tests with pure Python:
-
+### 1. Run Standalone Module Tests
 ```bash
-# 1. Test Truth Score Verification Engine
-PYTHONPATH=modules/truth-verification-engine python3 -c "
+# Test 1: Safety Gate Engine
+PYTHONPATH=modules/safety-gate backend/.venv/bin/python3 -c "
+from safety_gate import evaluate_safety_gate
+res = evaluate_safety_gate({'is_valid_report': True, 'confidence': 90, 'suspicious_flag': False})
+print('✅ Safety Gate Test:', res['status'], f'(Passed: {res[\"passed\"]})')
+assert res['passed'] == True
+"
+
+# Test 2: Warehouse Routing & Recycling Logistics
+PYTHONPATH=modules/recycling-categorizer backend/.venv/bin/python3 -c "
+from categorizer import categorize_for_recycling
+res = categorize_for_recycling('')
+print('✅ Warehouse Logistics Test:', res['recycling_category'], f'Purity: {res[\"purity_score\"]}%')
+assert res['recycling_category'] == 'mixed'
+"
+
+# Test 3: Truth Score Verification Engine
+PYTHONPATH=modules/truth-verification-engine backend/.venv/bin/python3 -c "
 from verifier import verify_work
 res = verify_work({'estimated_minutes': 40, 'actual_minutes': 35, 'start_lat': 20.35, 'start_lng': 85.81, 'end_lat': 20.3501, 'end_lng': 85.8101})
 print('✅ Verifier Test:', res['status'], f'(Truth: {res[\"truth_percentage\"]}%)')
 assert res['status'] == 'resolved'
 "
 
-# 2. Test Dynamic Reward Engine
-PYTHONPATH=modules/reward-engine python3 -c "
+# Test 4: Dynamic Reward Engine
+PYTHONPATH=modules/reward-engine backend/.venv/bin/python3 -c "
 from reward import generate_reward
-res = generate_reward([{'vendor_name': 'Puri Sweets', 'discount_percent': 20}])
+res = generate_reward([{'vendor_name': 'BigBasket', 'discount_percent': 10}])
 print('✅ Reward Test:', res['selected_vendor'], 'Code:', res['coupon_code'])
-assert 'CL-PUR-' in res['coupon_code']
+assert 'CL-BIG-' in res['coupon_code']
 "
 
-# 3. Test WhatsApp Intake
-PYTHONPATH=modules/whatsapp-intake python3 -c "
+# Test 5: WhatsApp Intake Webhook Handler
+PYTHONPATH=modules/whatsapp-intake backend/.venv/bin/python3 -c "
 from handler import handle_webhook
 res = handle_webhook({'body': 'From=whatsapp%3A%2B919084686979&Body=PingBin'})
-print('✅ WhatsApp Intake Test: Status', res['statusCode'])
+print('✅ WhatsApp Intake Test:', res['statusCode'])
 assert res['statusCode'] == 200
 "
+```
+
+### 2. Run Comprehensive 7-Scenario End-to-End Test Suite
+```bash
+cd frontend && npx playwright test tests/e2e/comprehensive_scenario_tests.spec.ts --workers=1 --reporter=list
 ```

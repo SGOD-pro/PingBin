@@ -1,0 +1,11 @@
+[project]
+name = "safety-gate"
+version = "1.0.0"
+description = "3-Layer Vision & Intake Safety Gate (Confidence, Suspicious Detection, and Segregation Audit)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

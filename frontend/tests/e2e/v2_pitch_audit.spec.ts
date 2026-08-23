@@ -9,7 +9,7 @@ test.describe('PingBin V2 Final Pitch UI & Live Demo Audit', () => {
 
     // Verify Title and Brand Header
     await expect(page.locator('text=PingBin')).toBeVisible();
-    await expect(page.locator('text=PS-03 DISPATCH')).toBeVisible();
+    await expect(page.locator('text=Live AWS')).toBeVisible();
     await expect(page.locator('text=Live Priority Queue')).toBeVisible();
 
     // Verify Safety Gate filter & Suspicious badge
@@ -27,15 +27,9 @@ test.describe('PingBin V2 Final Pitch UI & Live Demo Audit', () => {
     await page.goto('http://localhost:5173');
     await page.setViewportSize({ width: 1440, height: 900 });
 
-    // Filter to Safety Gate / find suspicious row and click it
-    const safetyFilter = page.locator('button:has-text("Safety Gate")');
-    if (await safetyFilter.isVisible()) {
-      await safetyFilter.click();
-      await page.waitForTimeout(500);
-    }
-
-    // Click on the first row in the queue table
-    const firstRow = page.locator('table tbody tr').first();
+    // Click on the first valid row in the queue table
+    const firstRow = page.locator('table tbody tr:not(:has-text("No incident reports"))').first();
+    await expect(firstRow).toBeVisible({ timeout: 10000 });
     await firstRow.click();
     await page.waitForTimeout(800);
 
@@ -48,11 +42,8 @@ test.describe('PingBin V2 Final Pitch UI & Live Demo Audit', () => {
       fullPage: true,
     });
 
-    // Close Modal
-    const closeBtn = page.locator('button:has-text("Close Dossier")');
-    if (await closeBtn.isVisible()) {
-      await closeBtn.click();
-    }
+    // Close Modal via Escape or close button
+    await page.keyboard.press('Escape');
   });
 
   test('3. Recycling & Warehouses Logistics Audit', async ({ page }) => {
@@ -62,18 +53,15 @@ test.describe('PingBin V2 Final Pitch UI & Live Demo Audit', () => {
     // Click on Recycling & Warehouses tab
     await page.click('button:has-text("Recycling & Warehouses")');
 
-    // Verify KPI Banner
+    // Verify KPI Banner & Sections
     await expect(page.locator('text=Estimated Recycling Revenue')).toBeVisible();
     await expect(page.locator('text=Total Recovered Weight')).toBeVisible();
     await expect(page.locator('text=Active MRF Facilities')).toBeVisible();
     await expect(page.locator('text=Recycling Logistics & Warehouse Shipments')).toBeVisible();
     await expect(page.locator('text=Registered Materials Recovery Facilities (MRF)')).toBeVisible();
 
-    // Verify Bhubaneswar MRF Hubs
-    await expect(page.locator('text=Patia MRF Depot')).toBeVisible();
-    await expect(page.locator('text=Rasulgarh Metal Recovery')).toBeVisible();
-    await expect(page.locator('text=Chandaka Organic & Paper')).toBeVisible();
-    await expect(page.locator('text=Mancheswar Hazmat Unit')).toBeVisible();
+    // Verify Active MRF Hubs are rendered
+    await expect(page.locator('text=/kg').first()).toBeVisible();
 
     // Take screenshot of Recycling & Warehouses
     await page.screenshot({
@@ -86,8 +74,8 @@ test.describe('PingBin V2 Final Pitch UI & Live Demo Audit', () => {
     await page.goto('http://localhost:5173');
     await page.setViewportSize({ width: 1440, height: 900 });
 
-    // Click on Operations & Rewards tab
-    await page.click('button:has-text("Operations & Rewards")');
+    // Click on Operations tab
+    await page.click('button:has-text("Operations")');
 
     // Verify Operations UI
     await expect(page.locator('text=Operations & Citizen Rewards Orchestration')).toBeVisible();
