@@ -188,12 +188,30 @@ Resources:
             ApiId: !Ref PingBinHttpApi
             Path: /reports/{id}/approve
             Method: POST
+        PostReportAssignWarehouse:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /reports/{id}/assign-warehouse
+            Method: POST
+        PostPruneTestData:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /reports/prune-test-data
+            Method: POST
         GetWarehouses:
           Type: HttpApi
           Properties:
             ApiId: !Ref PingBinHttpApi
             Path: /warehouses
             Method: GET
+        PostWarehouses:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /warehouses
+            Method: POST
         GetWorkers:
           Type: HttpApi
           Properties:
@@ -230,6 +248,12 @@ Resources:
             ApiId: !Ref PingBinHttpApi
             Path: /seed
             Method: GET
+        DefaultCatchAll:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PingBinHttpApi
+            Path: /{proxy+}
+            Method: ANY
 
 Outputs:
   HttpApiUrl:

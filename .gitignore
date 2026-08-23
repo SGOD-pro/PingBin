@@ -31,7 +31,7 @@ wheels/
 node_modules/
 # AWS SAM
 .aws-sam/
-
+.benchmarks
 # Logs
 *.log
 backend.log

@@ -947,6 +947,56 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
     if http_method == "GET" and path in ("/warehouses", "/warehouses/"):
         return ok(get_all_warehouses())
 
+    # POST /warehouses
+    if http_method == "POST" and path in ("/warehouses", "/warehouses/"):
+        from utils.dynamo import create_warehouse
+        try:
+            body = json.loads(event.get("body") or "{}")
+            name = body.get("name", "").strip()
+            category = body.get("category", "mixed").strip()
+            rate_per_kg = float(body.get("rate_per_kg", 8.0))
+            capacity_kg = float(body.get("capacity_kg", 5000.0))
+            address = body.get("address", "").strip()
+            loc = body.get("location", {})
+            lat = float(body.get("latitude") or loc.get("lat") or 20.3533)
+            lng = float(body.get("longitude") or loc.get("lng") or 85.8197)
+            accepted = body.get("accepted_categories", [category])
+            if not name:
+                return err("Facility name is required", 400)
+            item = create_warehouse(name, category, rate_per_kg, capacity_kg, address, lat, lng, accepted)
+            return ok({"status": "created", "warehouse": item})
+        except Exception as e:
+            logger.error(f"POST /warehouses error: {e}")
+            return err(str(e), 500)
+
+    # POST /reports/{id}/assign-warehouse
+    if http_method == "POST" and (path.endswith("/assign-warehouse") or "assign-warehouse" in path):
+        from utils.dynamo import assign_report_to_warehouse
+        parts = [p for p in path.strip("/").split("/") if p]
+        report_id = param_report_id or (parts[1] if len(parts) >= 3 else None)
+        if not report_id:
+            return err("Missing report_id", 400)
+        try:
+            body = json.loads(event.get("body") or "{}")
+            warehouse_id = body.get("warehouse_id", "").strip()
+            weight_kg = float(body.get("actual_weight_kg", 25.0))
+            if not warehouse_id:
+                return err("warehouse_id is required", 400)
+            res = assign_report_to_warehouse(report_id, warehouse_id, weight_kg)
+            return ok({"status": "assigned", "result": res})
+        except Exception as e:
+            logger.error(f"assign-warehouse error: {e}")
+            return err(str(e), 500)
+
+    # POST /reports/prune-test-data
+    if http_method == "POST" and path.endswith("/prune-test-data"):
+        from utils.dynamo import prune_test_reports
+        try:
+            res = prune_test_reports()
+            return ok(res)
+        except Exception as e:
+            return err(str(e), 500)
+
     # GET /workers
     if http_method == "GET" and path in ("/workers", "/workers/"):
         from utils.dynamo import workers_table
