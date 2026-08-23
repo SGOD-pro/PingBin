@@ -890,6 +890,16 @@ def get_worker_by_phone(phone: str) -> dict | None:
 # VENDORS
 # ===========================================================================
 
+def _convert_floats_to_decimals(obj):
+    if isinstance(obj, list):
+        return [_convert_floats_to_decimals(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {k: _convert_floats_to_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, float):
+        return Decimal(str(obj))
+    return obj
+
+
 def create_vendor(
     vendor_name: str,
     category: str,
@@ -909,7 +919,7 @@ def create_vendor(
         "description": description.strip(),
         "city": city.strip() if city else "",
         "area": area.strip() if area else "",
-        "coupon_templates": coupon_templates or [],
+        "coupon_templates": _convert_floats_to_decimals(coupon_templates or []),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     if lat is not None and lng is not None:

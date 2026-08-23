@@ -1012,15 +1012,19 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
         from utils.dynamo import create_worker
         try:
             body = json.loads(event.get("body") or "{}")
-            fullname = body.get("fullname", "").strip()
-            phone = body.get("phone", "").strip()
-            latitude = float(body.get("latitude", 20.3533))
-            longitude = float(body.get("longitude", 85.8197))
-            photo_url = body.get("photo_url")
+            fullname = (body.get("name") or body.get("fullname") or "").strip()
+            phone = (body.get("phone") or "").strip()
+            loc = body.get("last_known_location") or body.get("location") or {}
+            latitude = float(body.get("latitude") or loc.get("lat") or 20.3533)
+            longitude = float(body.get("longitude") or loc.get("lng") or 85.8197)
+            photo_url = body.get("photo_url") or ""
             if not fullname or not phone:
-                return err("fullname and phone are required")
+                return err("name and phone are required", 400)
             item = create_worker(fullname, phone, latitude, longitude, photo_url)
             return ok({"status": "created", "worker": item})
+        except ValueError as ve:
+            logger.warning(f"POST /workers validation error: {ve}")
+            return err(str(ve), 400)
         except Exception as e:
             logger.error(f"POST /workers error: {e}")
             return err(str(e), 500)
@@ -1030,13 +1034,20 @@ def lambda_handler(event: dict, context: dict | None = None) -> dict:
         from utils.dynamo import create_vendor
         try:
             body = json.loads(event.get("body") or "{}")
-            vendor_name = body.get("vendor_name", "").strip()
-            category = body.get("category", "").strip()
-            description = body.get("description", "").strip()
+            vendor_name = (body.get("vendor_name") or body.get("name") or "").strip()
+            category = (body.get("category") or "General").strip()
+            description = (body.get("description") or body.get("tagline") or "").strip()
+            city = (body.get("city") or "").strip()
+            area = (body.get("area") or body.get("neighborhood") or "").strip()
+            loc = body.get("location") or {}
+            lat_val = body.get("latitude") or loc.get("lat")
+            lng_val = body.get("longitude") or loc.get("lng")
+            lat = float(lat_val) if lat_val is not None and str(lat_val).strip() != "" else None
+            lng = float(lng_val) if lng_val is not None and str(lng_val).strip() != "" else None
             coupon_templates = body.get("coupon_templates", [])
             if not vendor_name:
-                return err("vendor_name is required")
-            item = create_vendor(vendor_name, category, description, coupon_templates)
+                return err("vendor_name is required", 400)
+            item = create_vendor(vendor_name, category, description, coupon_templates, lat, lng, city, area)
             return ok({"status": "created", "vendor": item})
         except Exception as e:
             logger.error(f"POST /vendors error: {e}")
