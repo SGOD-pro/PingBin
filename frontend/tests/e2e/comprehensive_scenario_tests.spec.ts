@@ -22,9 +22,6 @@ test.afterEach(async () => {
 
 const API = 'http://localhost:8000';
 const WASTE_IMG_URL = `${API}/images/dustbins-india-T5BHA9.jpg`;
-// For S4: use a very dark/blurry image that is definitely not waste. 
-// We use the mumbai image and send ONLY the location but a black base64 image inline:
-const NON_WASTE_IMG_URL = `${API}/images/mumbai-september-24-piles-garbage-600w-2238569423.webp`; 
 
 const SITE = { lat: 20.2961, lng: 85.8245 };
 const NEAR = { lat: 20.2963, lng: 85.8247 }; // ~25m — Gate A PASS
@@ -91,17 +88,6 @@ async function withStatus(id: string, statuses: string[], ms = 25000) {
     const r = reps.find(x => x['report_id'] === id);
     return r && statuses.includes(r['status'] as string) ? r : null;
   }, ms);
-}
-
-async function resetWorkers() {
-  /** Reset all workers to free so tests don't starve each other */
-  const workers: Record<string, unknown>[] = await fetch(`${API}/workers`).then(r => r.json());
-  for (const w of workers) {
-    if (w['status'] === 'busy') {
-      // POST a prune call doesn't help here — use the internal reset endpoint indirectly
-      // Actually, we just wait — workers get freed when their report resolves/review
-    }
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

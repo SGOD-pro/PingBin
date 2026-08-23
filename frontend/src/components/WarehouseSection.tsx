@@ -63,21 +63,21 @@ export const WarehouseSection: React.FC<WarehouseSectionProps> = ({
     return 'Mixed';
   };
 
-  const fetchWarehouses = async () => {
+  const fetchWarehouses = React.useCallback(async () => {
     try {
       const data = await api.getWarehouses();
       setWarehouses(data);
-      if (data.length > 0 && !selectedWarehouseId) {
-        setSelectedWarehouseId(data[0].warehouse_id);
+      if (data.length > 0) {
+        setSelectedWarehouseId((prev) => prev || data[0].warehouse_id);
       }
     } catch (err) {
       console.error('Failed to load warehouses:', err);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchWarehouses();
-  }, []);
+  }, [fetchWarehouses]);
 
   // Resolved reports that entered the warehouse recycling pipeline
   const resolvedReports = reports.filter((r) => r.status === 'resolved');
@@ -207,14 +207,8 @@ export const WarehouseSection: React.FC<WarehouseSectionProps> = ({
         description: `Dispatched to ${res.result?.assigned_warehouse_name} • Valuation: ₹${res.result?.actual_revenue}.`,
       });
 
-      // Update local report
-      assigningReport.assigned_warehouse_id = selectedWarehouseId;
-      assigningReport.assigned_warehouse_name = res.result?.assigned_warehouse_name;
-      assigningReport.estimated_weight_kg = measuredWeightKg;
-      assigningReport.estimated_revenue = res.result?.actual_revenue;
-      assigningReport.warehouse_status = 'assigned';
-
       setAssigningReport(null);
+      await fetchWarehouses();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to assign warehouse';
       toast.error('Assignment Failed', {
