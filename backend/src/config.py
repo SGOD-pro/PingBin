@@ -45,22 +45,20 @@ class Settings(BaseSettings):
     def get_boto3_session(self) -> boto3.Session:
         """Create a boto3 Session.
 
-        If ENV == 'dev', applies local AWS_PROFILE and AWS_REGION.
-        In production (AWS Lambda), directly creates boto3.Session() using IAM role.
+        Always applies region_name (defaults to ap-south-1).
+        If ENV == 'dev', applies local AWS_PROFILE if specified.
         """
-        if self.ENV and self.ENV.strip().lower() == "dev":
-            kwargs = {}
-            if self.AWS_PROFILE and self.AWS_PROFILE.strip():
-                kwargs["profile_name"] = self.AWS_PROFILE.strip()
-            if self.AWS_REGION and self.AWS_REGION.strip():
-                kwargs["region_name"] = self.AWS_REGION.strip()
+        region = self.AWS_REGION or "ap-south-1"
+        kwargs = {"region_name": region}
+        if self.ENV and self.ENV.strip().lower() == "dev" and self.AWS_PROFILE and self.AWS_PROFILE.strip():
+            kwargs["profile_name"] = self.AWS_PROFILE.strip()
+        try:
+            return boto3.Session(**kwargs)
+        except Exception:
             try:
-                return boto3.Session(**kwargs)
+                return boto3.Session(region_name=region)
             except Exception:
-                pass
-
-        # Production / AWS Lambda direct IAM role session
-        return boto3.Session()
+                return boto3.Session()
 
 
 settings = Settings()

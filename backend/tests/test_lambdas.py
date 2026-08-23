@@ -1,27 +1,34 @@
 import json
 import pytest
 import urllib.parse
-from unittest.mock import patch, MagicMock
-
-# Mocking env vars before importing lambdas
-@pytest.fixture(autouse=True)
-def mock_env(monkeypatch):
-    monkeypatch.setenv("SQS_QUEUE_URL", "https://sqs.mock")
-    monkeypatch.setenv("DYNAMODB_TABLE_REPORTS", "MockReports")
-    monkeypatch.setenv("DYNAMODB_TABLE_WORKERS", "MockWorkers")
-
-# Since the src modules are in `src/`, let's import them
-# We might need to adjust sys.path if this was run standalone,
-# but pytest usually handles this if configured properly.
 import sys
 import os
+from unittest.mock import patch, MagicMock
+
+# Configure environment before importing Lambda modules
+os.environ.setdefault("AWS_DEFAULT_REGION", "ap-south-1")
+os.environ.setdefault("AWS_REGION", "ap-south-1")
+os.environ.setdefault("SQS_QUEUE_URL", "https://sqs.mock")
+os.environ.setdefault("DYNAMODB_TABLE_REPORTS", "MockReports")
+os.environ.setdefault("DYNAMODB_TABLE_WORKERS", "MockWorkers")
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from webhook_receiver import lambda_handler as webhook_handler
 from processor import lambda_handler as processor_handler
 
-@patch('webhook_receiver.sqs_client.send_message')
-def test_webhook_receiver(mock_send_message):
+
+@pytest.fixture(autouse=True)
+def mock_env(monkeypatch):
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "ap-south-1")
+    monkeypatch.setenv("AWS_REGION", "ap-south-1")
+    monkeypatch.setenv("SQS_QUEUE_URL", "https://sqs.mock")
+    monkeypatch.setenv("DYNAMODB_TABLE_REPORTS", "MockReports")
+    monkeypatch.setenv("DYNAMODB_TABLE_WORKERS", "MockWorkers")
+
+
+@patch('webhook_receiver.sqs_client')
+def test_webhook_receiver(mock_sqs):
     body_data = {
         'From': 'whatsapp:+919876543210',
         'Body': 'Hello',
@@ -40,9 +47,9 @@ def test_webhook_receiver(mock_send_message):
     
     # Assert
     assert response['statusCode'] == 200
-    mock_send_message.assert_called_once()
+    mock_sqs.send_message.assert_called_once()
     
-    sent_msg = json.loads(mock_send_message.call_args[1]['MessageBody'])
+    sent_msg = json.loads(mock_sqs.send_message.call_args[1]['MessageBody'])
     assert sent_msg['sender_phone'] == '+919876543210'
     assert sent_msg['message_type'] == 'text'
     assert sent_msg['body_text'] == 'Hello'

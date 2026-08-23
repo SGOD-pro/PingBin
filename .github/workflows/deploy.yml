@@ -69,6 +69,7 @@ jobs:
           cp src/processor.py package_2/
           cp src/config.py package_2/ 2>/dev/null || true
           cp -r src/utils package_2/ 2>/dev/null || true
+          cp -r ../modules package_2/ 2>/dev/null || true
           uv export --format requirements-txt --no-hashes --no-emit-project --no-dev > requirements.txt
           uv pip install -r requirements.txt --target package_2/
           cd package_2 && zip -q -r ../lambda_2.zip .

@@ -11,7 +11,7 @@ logger.setLevel(logging.INFO)
 # Instantiate SQS client at module level using session
 try:
     session = settings.get_boto3_session()
-    sqs_client = session.client("sqs")
+    sqs_client = session.client("sqs", region_name=settings.AWS_REGION or "ap-south-1")
 except Exception as e:
     logger.warning(f"Failed to initialize SQS client: {e}")
     sqs_client = None

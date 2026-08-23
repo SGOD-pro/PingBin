@@ -2,10 +2,17 @@ import json
 import pytest
 import time
 import urllib.parse
-from unittest.mock import patch, MagicMock
-
 import sys
 import os
+from unittest.mock import patch, MagicMock
+
+# Configure environment before importing Lambda modules
+os.environ.setdefault("AWS_DEFAULT_REGION", "ap-south-1")
+os.environ.setdefault("AWS_REGION", "ap-south-1")
+os.environ.setdefault("SQS_QUEUE_URL", "https://sqs.mock")
+os.environ.setdefault("DYNAMODB_TABLE_REPORTS", "MockReports")
+os.environ.setdefault("DYNAMODB_TABLE_WORKERS", "MockWorkers")
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from webhook_receiver import lambda_handler as webhook_handler
@@ -28,8 +35,8 @@ def _simulate_webhook():
     }
     return webhook_handler(event, None)
 
-@patch('webhook_receiver.sqs_client.send_message')
-def test_benchmark_webhook_latency(mock_send_message, benchmark):
+@patch('webhook_receiver.sqs_client')
+def test_benchmark_webhook_latency(mock_sqs, benchmark):
     # Arrange
     # mock_send_message does nothing, simulating SQS enqueue
     
